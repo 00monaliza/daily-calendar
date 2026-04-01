@@ -71,7 +71,7 @@ export function FinancesPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
         {[
           { label: 'Доход', value: totalIncome, color: 'text-emerald-600' },
           { label: 'Расходы', value: totalExpenses, color: 'text-red-500' },
@@ -79,7 +79,7 @@ export function FinancesPage() {
         ].map(m => (
           <div key={m.label} className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="text-xs text-gray-500 mb-1">{m.label}</div>
-            <div className={`text-2xl font-bold ${m.color}`}>{m.value.toLocaleString()} ₸</div>
+            <div className={`text-xl md:text-2xl font-bold ${m.color}`}>{m.value.toLocaleString()} ₸</div>
           </div>
         ))}
       </div>
@@ -98,7 +98,8 @@ export function FinancesPage() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full">
+        {/* Desktop: table */}
+        <table className="w-full hidden md:table">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50">
               <th className="text-left text-xs text-gray-500 font-medium px-4 py-3">Квартира</th>
@@ -125,6 +126,27 @@ export function FinancesPage() {
             ))}
           </tbody>
         </table>
+
+        {/* Mobile: cards */}
+        <div className="md:hidden divide-y divide-gray-100">
+          {stats.map(row => (
+            <div key={row.property.id} className="p-4" style={{ borderLeft: `3px solid ${row.property.color}` }}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: row.property.color }} />
+                  <span className="text-sm font-semibold text-gray-800">{row.property.name}</span>
+                </div>
+                <span className={`text-sm font-bold ${row.profit >= 0 ? 'text-[#376E6F]' : 'text-red-600'}`}>
+                  {row.profit >= 0 ? '+' : ''}{row.profit.toLocaleString()} ₸
+                </span>
+              </div>
+              <div className="flex gap-4 text-xs text-gray-500">
+                <span>Доход: <span className="text-emerald-600 font-medium">{row.income.toLocaleString()} ₸</span></span>
+                <span>Расходы: <span className="text-red-500 font-medium">{row.expenses.toLocaleString()} ₸</span></span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
