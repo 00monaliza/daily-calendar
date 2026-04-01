@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { signIn, signUp } from '@/features/auth/useUser'
 
@@ -6,17 +6,26 @@ export function AuthPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
-    const fn = mode === 'login' ? signIn : signUp
-    const { error: authError } = await fn(email, password)
+    let authError
+    if (mode === 'login') {
+      ;({ error: authError } = await signIn(email, password))
+    } else {
+      ;({ error: authError } = await signUp(email, password, fullName, phone))
+      if (!authError) {
+        ;({ error: authError } = await signIn(email, password))
+      }
+    }
 
     if (authError) {
       setError(authError.message)
@@ -50,9 +59,37 @@ export function AuthPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'register' && (
+            <>
+              <div>
+                <label htmlFor="auth-fullname" className="block text-sm font-medium text-gray-700 mb-1">Полное имя</label>
+                <input
+                  id="auth-fullname"
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={e => setFullName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#376E6F] focus:border-transparent"
+                  placeholder="Иван Иванов"
+                />
+              </div>
+              <div>
+                <label htmlFor="auth-phone" className="block text-sm font-medium text-gray-700 mb-1">Номер телефона</label>
+                <input
+                  id="auth-phone"
+                  type="tel"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#376E6F] focus:border-transparent"
+                  placeholder="+7 999 123 45 67"
+                />
+              </div>
+            </>
+          )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label htmlFor="auth-email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
+              id="auth-email"
               type="email"
               required
               value={email}
@@ -62,8 +99,9 @@ export function AuthPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
+            <label htmlFor="auth-password" className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
             <input
+              id="auth-password"
               type="password"
               required
               value={password}

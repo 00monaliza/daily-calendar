@@ -11,5 +11,5 @@ export interface Property {
   created_at: string
 }
 
-export type PropertyInsert = Omit<Property, 'id' | 'owner_id' | 'created_at'>
+export type PropertyInsert = Omit<Property, 'id' | 'created_at'>
 export type PropertyUpdate = Partial<PropertyInsert>

@@ -24,5 +24,5 @@ export interface BookingWithProperty extends Booking {
   } | null
 }
 
-export type BookingInsert = Omit<Booking, 'id' | 'owner_id' | 'created_at'>
+export type BookingInsert = Omit<Booking, 'id' | 'created_at'>
 export type BookingUpdate = Partial<BookingInsert>

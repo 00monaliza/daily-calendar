@@ -12,6 +12,7 @@ function PropertyModal({
   property: Property | null
   onClose: () => void
 }) {
+  const { user } = useUser()
   const createProperty = useCreateProperty()
   const updateProperty = useUpdateProperty()
 
@@ -21,10 +22,13 @@ function PropertyModal({
   const [basePrice, setBasePrice] = useState(property?.base_price ?? 0)
   const [description, setDescription] = useState(property?.description ?? '')
   const [color, setColor] = useState(property?.color ?? '#376E6F')
+  const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setError(null)
     const data: PropertyInsert = {
+      owner_id: user!.id,
       name,
       address: address || null,
       rooms,
@@ -33,12 +37,16 @@ function PropertyModal({
       color,
       is_active: property?.is_active ?? true,
     }
-    if (property) {
-      await updateProperty.mutateAsync({ id: property.id, data })
-    } else {
-      await createProperty.mutateAsync(data)
+    try {
+      if (property) {
+        await updateProperty.mutateAsync({ id: property.id, data })
+      } else {
+        await createProperty.mutateAsync(data)
+      }
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось сохранить. Попробуйте ещё раз.')
     }
-    onClose()
   }
 
   const isLoading = createProperty.isPending || updateProperty.isPending
@@ -89,7 +97,7 @@ function PropertyModal({
                 type="number"
                 min={0}
                 value={basePrice}
-                onChange={e => setBasePrice(Number(e.target.value))}
+                onChange={e => setBasePrice(Number(e.target.value) || 0)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
               />
             </div>
@@ -121,6 +129,11 @@ function PropertyModal({
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F] resize-none"
             />
           </div>
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
           <button
             type="submit"
             disabled={isLoading}

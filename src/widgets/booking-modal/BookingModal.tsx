@@ -58,6 +58,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
     if (!user) return
 
     const data = {
+      owner_id: user.id,
       property_id: propertyId,
       guest_name: guestName,
       guest_phone: guestPhone || null,

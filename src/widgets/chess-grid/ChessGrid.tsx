@@ -132,7 +132,7 @@ export function ChessGrid({ properties, bookings, currentMonth, onCellClick, onB
                   return (
                     <td
                       key={dateStr}
-                      className={`border-b border-gray-100 h-10 cursor-pointer hover:bg-gray-50 transition-colors ${today ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5' : ''}`}
+                      className={`border border-gray-200 h-10 cursor-pointer hover:bg-[#376E6F]/10 transition-colors ${today ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5' : ''}`}
                       onClick={() => onCellClick(dateStr, property.id)}
                     />
                   )

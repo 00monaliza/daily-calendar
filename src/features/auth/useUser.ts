@@ -26,8 +26,15 @@ export async function signIn(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password })
 }
 
-export async function signUp(email: string, password: string) {
-  return supabase.auth.signUp({ email, password })
+export async function signUp(email: string, password: string, fullName: string, phone: string) {
+  const { data, error } = await supabase.auth.signUp({ email, password })
+  if (error || !data.user) return { error }
+
+  await supabase
+    .from('profiles')
+    .upsert({ id: data.user.id, full_name: fullName, phone })
+
+  return { error: null, data }
 }
 
 export async function signOut() {
