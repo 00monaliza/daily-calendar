@@ -1,4 +1,5 @@
-import { format, eachDayOfInterval, parseISO, isToday, isSameDay } from 'date-fns'
+import React from 'react'
+import { format, eachDayOfInterval, parseISO, isToday, isSameDay, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
@@ -101,14 +102,45 @@ export function ChessGrid({ properties, bookings, from, to, onCellClick, onBooki
                     const isStart = isSameDay(parseISO(booking.check_in), day)
                     const isEnd = isSameDay(parseISO(booking.check_out), day)
 
+                    const COL_W = 36
+                    let textOverlay: React.ReactNode = null
+                    if (isStart) {
+                      const checkOut = parseISO(booking.check_out)
+                      const rangeEnd = parseISO(to)
+                      const effectiveEnd = checkOut <= rangeEnd ? checkOut : rangeEnd
+                      const spanDays = Math.max(1, differenceInCalendarDays(effectiveEnd, day) + 1)
+                      const textWidth = spanDays * COL_W - 6
+                      const tooltipText = [booking.guest_name, booking.comment].filter(Boolean).join(' — ')
+
+                      textOverlay = (
+                        <div
+                          className="absolute top-0.5 bottom-0.5 left-[5px] z-10 flex flex-col justify-center px-1.5 py-0.5 pointer-events-none overflow-hidden"
+                          style={{ width: `${textWidth}px` }}
+                          title={tooltipText}
+                        >
+                          <span
+                            className="text-xs font-medium leading-tight whitespace-normal break-words"
+                            style={{ color: property.color }}
+                          >
+                            {booking.guest_name}
+                          </span>
+                          {booking.comment && (
+                            <span className="text-[10px] text-gray-500 leading-tight whitespace-normal break-words mt-0.5 line-clamp-2">
+                              {booking.comment}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    }
+
                     return (
                       <td
                         key={dateStr}
-                        className={`border-b border-gray-100 h-10 p-0 cursor-pointer relative ${today ? 'border-l-2 border-l-[#376E6F]' : ''}`}
+                        className={`border-b border-gray-100 h-10 p-0 cursor-pointer relative overflow-visible ${today ? 'border-l-2 border-l-[#376E6F]' : ''}`}
                         onClick={() => onBookingClick(booking)}
                       >
                         <div
-                          className="absolute inset-y-0.5 flex items-center overflow-hidden"
+                          className="absolute inset-y-0.5"
                           style={{
                             left: isStart ? '2px' : '0',
                             right: isEnd ? '2px' : '0',
@@ -116,16 +148,8 @@ export function ChessGrid({ properties, bookings, from, to, onCellClick, onBooki
                             borderLeft: isStart ? `3px solid ${property.color}` : 'none',
                             borderRadius: isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : '0',
                           }}
-                        >
-                          {isStart && (
-                            <span
-                              className="text-xs font-medium px-1 truncate"
-                              style={{ color: property.color }}
-                            >
-                              {booking.guest_name}
-                            </span>
-                          )}
-                        </div>
+                        />
+                        {textOverlay}
                       </td>
                     )
                   }
