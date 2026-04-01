@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useUser } from '@/features/auth/useUser'
 import { useProperties, useCreateProperty, useUpdateProperty, useDeleteProperty } from '@/entities/property/queries'
 import type { Property, PropertyInsert } from '@/entities/property/types'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
+import { BottomSheet } from '@/widgets/bottom-sheet/BottomSheet'
 
 const COLORS = ['#376E6F', '#DA7B93', '#2F4454', '#F4A261', '#8B5CF6', '#0EA5E9', '#10B981', '#EF4444']
 
@@ -12,6 +14,7 @@ function PropertyModal({
   property: Property | null
   onClose: () => void
 }) {
+  const isMobile = useIsMobile()
   const { user } = useUser()
   const createProperty = useCreateProperty()
   const updateProperty = useUpdateProperty()
@@ -51,6 +54,103 @@ function PropertyModal({
 
   const isLoading = createProperty.isPending || updateProperty.isPending
 
+  const formContent = (
+    <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Название *</label>
+        <input
+          required
+          value={name}
+          onChange={e => setName(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          placeholder="Квартира на Абая 10"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Адрес</label>
+        <input
+          value={address}
+          onChange={e => setAddress(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          placeholder="г. Алматы, ул. Абая 10"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Комнат</label>
+          <input
+            type="number"
+            min={1}
+            value={rooms}
+            onChange={e => setRooms(Number(e.target.value))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Цена/ночь (₸)</label>
+          <input
+            type="number"
+            min={0}
+            value={basePrice}
+            onChange={e => setBasePrice(Number(e.target.value) || 0)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          />
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Цвет</label>
+        <div className="flex gap-2 flex-wrap">
+          {COLORS.map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setColor(c)}
+              className="w-7 h-7 rounded-full border-2 transition-all"
+              style={{
+                backgroundColor: c,
+                borderColor: color === c ? '#1C3334' : 'transparent',
+                transform: color === c ? 'scale(1.2)' : 'scale(1)',
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          rows={2}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F] resize-none"
+        />
+      </div>
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
+      <button
+        type="submit"
+        disabled={isLoading}
+        className="w-full bg-[#376E6F] text-white py-2 rounded-lg text-sm font-medium hover:bg-[#1C3334] transition-colors disabled:opacity-50"
+      >
+        {isLoading ? 'Сохранение...' : 'Сохранить'}
+      </button>
+    </form>
+  )
+
+  if (isMobile) {
+    return (
+      <BottomSheet
+        open
+        onClose={onClose}
+        title={property ? 'Редактировать квартиру' : 'Добавить квартиру'}
+      >
+        {formContent}
+      </BottomSheet>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
@@ -60,88 +160,7 @@ function PropertyModal({
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
         </div>
-        <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Название *</label>
-            <input
-              required
-              value={name}
-              onChange={e => setName(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-              placeholder="Квартира на Абая 10"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Адрес</label>
-            <input
-              value={address}
-              onChange={e => setAddress(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-              placeholder="г. Алматы, ул. Абая 10"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Комнат</label>
-              <input
-                type="number"
-                min={1}
-                value={rooms}
-                onChange={e => setRooms(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Цена/ночь (₸)</label>
-              <input
-                type="number"
-                min={0}
-                value={basePrice}
-                onChange={e => setBasePrice(Number(e.target.value) || 0)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Цвет</label>
-            <div className="flex gap-2 flex-wrap">
-              {COLORS.map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className="w-7 h-7 rounded-full border-2 transition-all"
-                  style={{
-                    backgroundColor: c,
-                    borderColor: color === c ? '#1C3334' : 'transparent',
-                    transform: color === c ? 'scale(1.2)' : 'scale(1)',
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>
-            <textarea
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              rows={2}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F] resize-none"
-            />
-          </div>
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
-              {error}
-            </div>
-          )}
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-[#376E6F] text-white py-2 rounded-lg text-sm font-medium hover:bg-[#1C3334] transition-colors disabled:opacity-50"
-          >
-            {isLoading ? 'Сохранение...' : 'Сохранить'}
-          </button>
-        </form>
+        {formContent}
       </div>
     </div>
   )
@@ -220,18 +239,18 @@ export function PropertiesPage() {
                   <span>{property.base_price.toLocaleString()} ₸/ночь</span>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => openEdit(property)}
-                  className="text-xs text-[#376E6F] hover:underline"
+                  className="text-xs text-[#376E6F] hover:underline px-2 py-2 min-h-[44px] flex items-center"
                 >
                   Изменить
                 </button>
                 <button
                   onClick={() => handleToggleActive(property)}
-                  className="text-xs text-gray-400 hover:text-gray-600 hover:underline"
+                  className="text-xs text-gray-400 hover:text-gray-600 hover:underline px-2 py-2 min-h-[44px] flex items-center"
                 >
-                  {property.is_active ? 'Архивировать' : 'Восстановить'}
+                  {property.is_active ? 'Архив' : 'Восстановить'}
                 </button>
                 <button
                   onClick={() => {
@@ -239,7 +258,7 @@ export function PropertiesPage() {
                       deleteProperty.mutate(property.id)
                     }
                   }}
-                  className="text-xs text-red-400 hover:text-red-600 hover:underline"
+                  className="text-xs text-red-400 hover:text-red-600 hover:underline px-2 py-2 min-h-[44px] flex items-center"
                 >
                   Удалить
                 </button>
