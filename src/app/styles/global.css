@@ -24,3 +24,12 @@ body {
   background-color: #f8fafc;
   color: #1e293b;
 }
+
+/* Mobile touch & scroll */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.overflow-x-scroll {
+  -webkit-overflow-scrolling: touch;
+}

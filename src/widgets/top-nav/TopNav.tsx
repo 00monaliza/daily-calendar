@@ -21,7 +21,7 @@ export function TopNav() {
   }
 
   return (
-    <nav className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+    <nav className="hidden md:flex bg-white border-b border-gray-200 px-4 py-3 items-center justify-between">
       <div className="flex items-center gap-6">
         <span className="font-bold text-[#376E6F] text-lg">Pogostim</span>
         <div className="flex gap-1">
