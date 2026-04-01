@@ -154,7 +154,7 @@ async function cacheFirst(request, cacheName, ttlMs) {
   const fresh = await fetch(request)
   if (isCacheableResponse(fresh)) {
     await cache.put(request, fresh.clone())
-    await setCacheMetadata(cacheName, request, Date.now())
+    await updateCacheMetadata(cacheName, request, Date.now())
   }
   return fresh
 }
@@ -167,8 +167,7 @@ async function staleWhileRevalidate(request, cacheName, ttlMs, maxEntries) {
     .then(async (response) => {
       if (isCacheableResponse(response)) {
         await cache.put(request, response.clone())
-        await setCacheMetadata(cacheName, request, Date.now())
-        await enforceCacheLimit(cacheName, maxEntries)
+        await updateCacheMetadata(cacheName, request, Date.now(), maxEntries)
       }
       return response
     })
@@ -193,8 +192,7 @@ async function networkFirstNavigation(request) {
     if (isCacheableResponse(response)) {
       const cache = await caches.open(PAGE_CACHE)
       await cache.put(request, response.clone())
-      await setCacheMetadata(PAGE_CACHE, request, Date.now())
-      await enforceCacheLimit(PAGE_CACHE, PAGE_CACHE_MAX_ENTRIES)
+      await updateCacheMetadata(PAGE_CACHE, request, Date.now(), PAGE_CACHE_MAX_ENTRIES)
     }
     return response
   } catch {
@@ -218,8 +216,7 @@ async function networkFirstApi(request) {
     const response = await fetch(request)
     if (isCacheableResponse(response)) {
       await cache.put(request, response.clone())
-      await setCacheMetadata(API_CACHE, request, Date.now())
-      await enforceCacheLimit(API_CACHE, API_CACHE_MAX_ENTRIES)
+      await updateCacheMetadata(API_CACHE, request, Date.now(), API_CACHE_MAX_ENTRIES)
     }
     return response
   } catch {
@@ -342,8 +339,15 @@ function isCacheableResponse(response) {
   return response && response.ok && response.type !== 'opaque'
 }
 
+function metaRequest(cacheName, request) {
+  const url = new URL('/__sw-meta__', self.location.origin)
+  url.searchParams.set('cache', cacheName)
+  url.searchParams.set('url', request.url)
+  return new Request(url.toString())
+}
+
 function metaKey(cacheName, request) {
-  return `${cacheName}::${new URL(request.url).toString()}`
+  return metaRequest(cacheName, request).url
 }
 
 async function getValidCachedResponse(cacheName, request, ttlMs) {
@@ -355,7 +359,7 @@ async function getValidCachedResponse(cacheName, request, ttlMs) {
 
   const meta = await getCacheMetadata(cacheName, request)
   if (!meta) {
-    await setCacheMetadata(cacheName, request, Date.now())
+    await updateCacheMetadata(cacheName, request, Date.now())
     return cached
   }
 
@@ -373,7 +377,7 @@ async function touchCacheEntry(cacheName, request) {
   if (!meta) {
     return
   }
-  await setCacheMetadata(cacheName, request, meta.cachedAt, Date.now())
+  await updateCacheMetadata(cacheName, request, meta.cachedAt, undefined, Date.now())
 }
 
 async function enforceCacheLimit(cacheName, maxEntries) {
@@ -405,13 +409,23 @@ async function setCacheMetadata(cacheName, request, cachedAt, lastAccessed = Dat
     cachedAt,
     lastAccessed,
   })
-  await cache.put(key, new Response(body, { headers: { 'Content-Type': 'application/json' } }))
+  await cache.put(metaRequest(cacheName, request), new Response(body, { headers: { 'Content-Type': 'application/json' } }))
+}
+
+async function updateCacheMetadata(cacheName, request, cachedAt, maxEntries, lastAccessed = Date.now()) {
+  try {
+    await setCacheMetadata(cacheName, request, cachedAt, lastAccessed)
+    if (typeof maxEntries === 'number') {
+      await enforceCacheLimit(cacheName, maxEntries)
+    }
+  } catch (error) {
+    swLog('cache metadata update failed', { cacheName, url: request.url, error })
+  }
 }
 
 async function getCacheMetadata(cacheName, request) {
   const cache = await caches.open(META_CACHE)
-  const key = metaKey(cacheName, request)
-  const response = await cache.match(key)
+  const response = await cache.match(metaRequest(cacheName, request))
   if (!response) {
     return null
   }
@@ -421,7 +435,10 @@ async function getCacheMetadata(cacheName, request) {
 async function getAllCacheMetadata(cacheName) {
   const cache = await caches.open(META_CACHE)
   const keys = await cache.keys()
-  const related = keys.filter((request) => request.url.includes(`${cacheName}::`))
+  const related = keys.filter((request) => {
+    const url = new URL(request.url)
+    return url.pathname === '/__sw-meta__' && url.searchParams.get('cache') === cacheName
+  })
   const items = []
 
   for (const request of related) {
@@ -437,7 +454,7 @@ async function getAllCacheMetadata(cacheName) {
 
 async function deleteCacheMetadata(cacheName, request) {
   const cache = await caches.open(META_CACHE)
-  await cache.delete(metaKey(cacheName, request))
+  await cache.delete(metaRequest(cacheName, request))
 }
 
 async function deleteCacheMetadataByKey(key) {
@@ -468,7 +485,7 @@ async function focusOrOpenClient(targetUrl) {
   const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
   for (const client of windowClients) {
     if ('focus' in client) {
-      client.navigate(targetUrl)
+      await client.navigate(targetUrl)
       return client.focus()
     }
   }
