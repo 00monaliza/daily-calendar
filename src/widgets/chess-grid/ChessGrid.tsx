@@ -1,4 +1,4 @@
-import { format, eachDayOfInterval, startOfMonth, endOfMonth, isToday, parseISO, isSameDay } from 'date-fns'
+import { format, eachDayOfInterval, parseISO, isToday, isSameDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
@@ -7,6 +7,8 @@ interface Props {
   properties: Property[]
   bookings: (Booking | BookingWithProperty)[]
   currentMonth: Date
+  from: string
+  to: string
   onCellClick: (date: string, propertyId: string) => void
   onBookingClick: (booking: Booking) => void
 }
@@ -18,13 +20,12 @@ function hexToRgb(hex: string) {
     : { r: 55, g: 110, b: 111 }
 }
 
-export function ChessGrid({ properties, bookings, currentMonth, onCellClick, onBookingClick }: Props) {
+export function ChessGrid({ properties, bookings, from, to, onCellClick, onBookingClick }: Props) {
   const days = eachDayOfInterval({
-    start: startOfMonth(currentMonth),
-    end: endOfMonth(currentMonth),
+    start: parseISO(from),
+    end: parseISO(to),
   })
 
-  // Build lookup: propertyId -> date -> booking
   const bookingMap = new Map<string, Map<string, Booking>>()
   for (const booking of bookings) {
     if (!bookingMap.has(booking.property_id)) {

@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
 import { useProperties } from '@/entities/property/queries'
 import { useBookings } from '@/entities/booking/queries'
@@ -14,14 +13,14 @@ import { MobileChessGrid } from '@/widgets/chess-grid/MobileChessGrid'
 export function ChessPage() {
   const isMobile = useIsMobile()
   const { user } = useUser()
-  const [currentMonth, setCurrentMonth] = useState(new Date())
+
+  const [from, setFrom] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'))
+  const [to, setTo] = useState(() => format(endOfMonth(new Date()), 'yyyy-MM-dd'))
+
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
   const [prefillDate, setPrefillDate] = useState<string | null>(null)
   const [prefillPropertyId, setPrefillPropertyId] = useState<string | null>(null)
-
-  const from = format(startOfMonth(currentMonth), 'yyyy-MM-dd')
-  const to = format(endOfMonth(currentMonth), 'yyyy-MM-dd')
 
   const { data: properties = [] } = useProperties(user?.id)
   const { data: bookings = [], isLoading } = useBookings(user?.id, from, to)
@@ -40,31 +39,54 @@ export function ChessPage() {
     setModalOpen(true)
   }
 
+  function handleFromChange(value: string) {
+    setFrom(value)
+    if (value > to) setTo(value)
+  }
+
+  function handleToChange(value: string) {
+    setTo(value)
+    if (value < from) setFrom(value)
+  }
+
+  function resetToCurrentMonth() {
+    setFrom(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
+    setTo(format(endOfMonth(new Date()), 'yyyy-MM-dd'))
+  }
+
+  const currentMonth = new Date(from)
+
   return (
     <div className="flex flex-col h-full">
       <SummaryBar bookings={bookings} properties={properties} from={from} to={to} />
 
-      <div className="flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
+      {/* Date range picker */}
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-white border-b border-gray-200 flex-wrap">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <label className="text-xs text-gray-400 flex-shrink-0">С</label>
+          <input
+            type="date"
+            value={from}
+            max={to}
+            onChange={e => handleFromChange(e.target.value)}
+            className="flex-1 min-w-0 text-sm text-gray-800 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#376E6F]/30 focus:border-[#376E6F]"
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <label className="text-xs text-gray-400 flex-shrink-0">По</label>
+          <input
+            type="date"
+            value={to}
+            min={from}
+            onChange={e => handleToChange(e.target.value)}
+            className="flex-1 min-w-0 text-sm text-gray-800 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#376E6F]/30 focus:border-[#376E6F]"
+          />
+        </div>
         <button
-          onClick={() => setCurrentMonth(m => subMonths(m, 1))}
-          className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
+          onClick={resetToCurrentMonth}
+          className="text-xs text-[#376E6F] hover:underline flex-shrink-0 py-1.5 px-1"
         >
-          ‹
-        </button>
-        <span className="font-semibold text-gray-800 min-w-[160px] text-center">
-          {format(currentMonth, 'LLLL yyyy', { locale: ru })}
-        </span>
-        <button
-          onClick={() => setCurrentMonth(m => addMonths(m, 1))}
-          className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
-        >
-          ›
-        </button>
-        <button
-          onClick={() => setCurrentMonth(new Date())}
-          className="ml-2 text-xs text-[#376E6F] hover:underline"
-        >
-          Сегодня
+          Текущий месяц
         </button>
       </div>
 
@@ -77,6 +99,8 @@ export function ChessPage() {
           properties={properties}
           bookings={bookings}
           currentMonth={currentMonth}
+          from={from}
+          to={to}
           onCellClick={handleCellClick}
           onBookingClick={handleBookingClick}
         />
@@ -85,6 +109,8 @@ export function ChessPage() {
           properties={properties}
           bookings={bookings}
           currentMonth={currentMonth}
+          from={from}
+          to={to}
           onCellClick={handleCellClick}
           onBookingClick={handleBookingClick}
         />

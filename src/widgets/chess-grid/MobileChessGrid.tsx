@@ -1,5 +1,4 @@
-// src/widgets/chess-grid/MobileChessGrid.tsx
-import { format, eachDayOfInterval, startOfMonth, endOfMonth, isToday, parseISO, isSameDay } from 'date-fns'
+import { format, eachDayOfInterval, parseISO, isToday, isSameDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
@@ -8,6 +7,8 @@ interface Props {
   properties: Property[]
   bookings: (Booking | BookingWithProperty)[]
   currentMonth: Date
+  from: string
+  to: string
   onCellClick: (date: string, propertyId: string) => void
   onBookingClick: (booking: Booking) => void
 }
@@ -19,10 +20,10 @@ function hexToRgb(hex: string) {
     : { r: 55, g: 110, b: 111 }
 }
 
-export function MobileChessGrid({ properties, bookings, currentMonth, onCellClick, onBookingClick }: Props) {
+export function MobileChessGrid({ properties, bookings, from, to, onCellClick, onBookingClick }: Props) {
   const days = eachDayOfInterval({
-    start: startOfMonth(currentMonth),
-    end: endOfMonth(currentMonth),
+    start: parseISO(from),
+    end: parseISO(to),
   })
 
   const bookingMap = new Map<string, Map<string, Booking>>()
@@ -56,7 +57,7 @@ export function MobileChessGrid({ properties, bookings, currentMonth, onCellClic
           <tr>
             <th
               className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-2 py-2 text-left text-xs text-gray-500 font-medium"
-              style={{ minWidth: 80 }}
+              style={{ minWidth: 100 }}
             >
               Квартира
             </th>
@@ -88,14 +89,14 @@ export function MobileChessGrid({ properties, bookings, currentMonth, onCellClic
               <tr key={property.id}>
                 <td
                   className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-2 py-0"
-                  style={{ minWidth: 80 }}
+                  style={{ minWidth: 100 }}
                 >
                   <div className="flex items-center gap-1.5 py-1">
                     <div
                       className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                       style={{ backgroundColor: property.color }}
                     />
-                    <span className="text-xs font-medium text-gray-800 truncate" style={{ maxWidth: 56 }}>
+                    <span className="text-xs font-medium text-gray-800 truncate" style={{ maxWidth: 76 }}>
                       {property.name}
                     </span>
                   </div>
@@ -131,7 +132,7 @@ export function MobileChessGrid({ properties, bookings, currentMonth, onCellClic
                               className="text-[10px] font-medium px-1 truncate"
                               style={{ color: property.color }}
                             >
-                              {booking.guest_name.split(' ')[0]}
+                              {booking.guest_name}
                             </span>
                           )}
                         </div>
