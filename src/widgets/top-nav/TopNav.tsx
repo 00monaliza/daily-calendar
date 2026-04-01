@@ -1,12 +1,23 @@
+import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { signOut } from '@/features/auth/useUser'
 
 export function TopNav() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [refreshing, setRefreshing] = useState(false)
 
   async function handleSignOut() {
     await signOut()
     navigate('/auth')
+  }
+
+  function handleRefresh() {
+    if (refreshing) return
+    setRefreshing(true)
+    queryClient.invalidateQueries()
+    setTimeout(() => setRefreshing(false), 1000)
   }
 
   return (
@@ -49,12 +60,22 @@ export function TopNav() {
           </NavLink>
         </div>
       </div>
-      <button
-        onClick={handleSignOut}
-        className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
-      >
-        Выйти
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className={`text-lg text-gray-500 hover:text-gray-700 transition-colors disabled:cursor-not-allowed inline-block ${refreshing ? 'animate-spin' : ''}`}
+          title="Обновить данные"
+        >
+          ↻
+        </button>
+        <button
+          onClick={handleSignOut}
+          className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          Выйти
+        </button>
+      </div>
     </nav>
   )
 }
