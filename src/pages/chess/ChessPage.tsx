@@ -8,8 +8,11 @@ import { SummaryBar } from '@/widgets/summary-bar/SummaryBar'
 import { ChessGrid } from '@/widgets/chess-grid/ChessGrid'
 import { BookingModal } from '@/widgets/booking-modal/BookingModal'
 import type { Booking } from '@/entities/booking/types'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
+import { MobileChessGrid } from '@/widgets/chess-grid/MobileChessGrid'
 
 export function ChessPage() {
+  const isMobile = useIsMobile()
   const { user } = useUser()
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [modalOpen, setModalOpen] = useState(false)
@@ -69,6 +72,14 @@ export function ChessPage() {
         <div className="flex items-center justify-center flex-1">
           <div className="w-8 h-8 border-4 border-[#376E6F] border-t-transparent rounded-full animate-spin" />
         </div>
+      ) : isMobile ? (
+        <MobileChessGrid
+          properties={properties}
+          bookings={bookings}
+          currentMonth={currentMonth}
+          onCellClick={handleCellClick}
+          onBookingClick={handleBookingClick}
+        />
       ) : (
         <ChessGrid
           properties={properties}
