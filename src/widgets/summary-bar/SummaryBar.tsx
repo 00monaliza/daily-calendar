@@ -39,11 +39,11 @@ export function SummaryBar({ bookings, properties, from, to }: Props) {
   ]
 
   return (
-    <div className="grid grid-cols-4 gap-4 px-4 py-3 bg-white border-b border-gray-200">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-4 py-3 bg-white border-b border-gray-200">
       {metrics.map(m => (
         <div key={m.label} className="flex flex-col">
           <span className="text-xs text-gray-500 mb-0.5">{m.label}</span>
-          <span className={`text-xl font-bold ${m.color}`}>{m.value}</span>
+          <span className={`text-lg md:text-xl font-bold ${m.color}`}>{m.value}</span>
         </div>
       ))}
     </div>
