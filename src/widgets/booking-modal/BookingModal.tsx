@@ -4,6 +4,8 @@ import { useUser } from '@/features/auth/useUser'
 import { useCreateBooking, useUpdateBooking, useDeleteBooking } from '@/entities/booking/queries'
 import type { Booking, PaymentStatus, BookingSource } from '@/entities/booking/types'
 import type { Property } from '@/entities/property/types'
+import { useIsMobile } from '@/shared/hooks/useIsMobile'
+import { BottomSheet } from '@/widgets/bottom-sheet/BottomSheet'
 
 interface Props {
   booking: Booking | null
@@ -23,6 +25,7 @@ const SOURCES: { value: BookingSource; label: string }[] = [
 ]
 
 export function BookingModal({ booking, properties, prefillDate, prefillPropertyId, onClose }: Props) {
+  const isMobile = useIsMobile()
   const { user } = useUser()
   const createBooking = useCreateBooking()
   const updateBooking = useUpdateBooking()
@@ -87,6 +90,170 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
 
   const isLoading = createBooking.isPending || updateBooking.isPending || deleteBooking.isPending
 
+  const formContent = (
+    <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Квартира *</label>
+        <select
+          required
+          value={propertyId}
+          onChange={e => setPropertyId(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+        >
+          {properties.map(p => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Заезд *</label>
+          <input
+            type="date"
+            required
+            value={checkIn}
+            onChange={e => setCheckIn(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Выезд *</label>
+          <input
+            type="date"
+            required
+            value={checkOut}
+            min={checkIn}
+            onChange={e => setCheckOut(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          />
+        </div>
+      </div>
+
+      {nights > 0 && (
+        <div className="text-xs text-gray-500">{nights} {nights === 1 ? 'ночь' : nights < 5 ? 'ночи' : 'ночей'}</div>
+      )}
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Имя гостя *</label>
+        <input
+          type="text"
+          required
+          value={guestName}
+          onChange={e => setGuestName(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          placeholder="Иванов Иван"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Телефон</label>
+        <input
+          type="tel"
+          value={guestPhone}
+          onChange={e => setGuestPhone(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          placeholder="+7 777 000 00 00"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Сумма (₸)</label>
+          <input
+            type="number"
+            min={0}
+            value={totalPrice}
+            onChange={e => setTotalPrice(Number(e.target.value))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Предоплата (₸)</label>
+          <input
+            type="number"
+            min={0}
+            value={prepayment}
+            onChange={e => setPrepayment(Number(e.target.value))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Статус оплаты</label>
+        <div className="flex rounded-lg overflow-hidden border border-gray-200">
+          {([['waiting', 'Ожидает'], ['partial', 'Частично'], ['paid', 'Оплачено']] as const).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setPaymentStatus(val)}
+              className={`flex-1 py-1.5 text-xs font-medium transition-colors ${paymentStatus === val ? 'bg-[#376E6F] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Источник</label>
+        <select
+          value={source}
+          onChange={e => setSource(e.target.value as BookingSource)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+        >
+          {SOURCES.map(s => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий</label>
+        <textarea
+          value={comment}
+          onChange={e => setComment(e.target.value)}
+          rows={2}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F] resize-none"
+          placeholder="Дополнительная информация..."
+        />
+      </div>
+
+      <div className="flex gap-3 pt-2">
+        {booking && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isLoading}
+            className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+          >
+            Удалить
+          </button>
+        )}
+        <button
+          type="submit"
+          disabled={isLoading || nights <= 0}
+          className="flex-1 bg-[#376E6F] text-white py-2 rounded-lg text-sm font-medium hover:bg-[#1C3334] transition-colors disabled:opacity-50"
+        >
+          {isLoading ? 'Сохранение...' : 'Сохранить'}
+        </button>
+      </div>
+    </form>
+  )
+
+  if (isMobile) {
+    return (
+      <BottomSheet
+        open
+        onClose={onClose}
+        title={booking ? 'Редактировать бронь' : 'Новая бронь'}
+      >
+        {formContent}
+      </BottomSheet>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
@@ -99,156 +266,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
         </div>
-
-        <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Квартира *</label>
-            <select
-              required
-              value={propertyId}
-              onChange={e => setPropertyId(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-            >
-              {properties.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Заезд *</label>
-              <input
-                type="date"
-                required
-                value={checkIn}
-                onChange={e => setCheckIn(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Выезд *</label>
-              <input
-                type="date"
-                required
-                value={checkOut}
-                min={checkIn}
-                onChange={e => setCheckOut(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-              />
-            </div>
-          </div>
-
-          {nights > 0 && (
-            <div className="text-xs text-gray-500">{nights} {nights === 1 ? 'ночь' : nights < 5 ? 'ночи' : 'ночей'}</div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Имя гостя *</label>
-            <input
-              type="text"
-              required
-              value={guestName}
-              onChange={e => setGuestName(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-              placeholder="Иванов Иван"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Телефон</label>
-            <input
-              type="tel"
-              value={guestPhone}
-              onChange={e => setGuestPhone(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-              placeholder="+7 777 000 00 00"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Сумма (₸)</label>
-              <input
-                type="number"
-                min={0}
-                value={totalPrice}
-                onChange={e => setTotalPrice(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Предоплата (₸)</label>
-              <input
-                type="number"
-                min={0}
-                value={prepayment}
-                onChange={e => setPrepayment(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Статус оплаты</label>
-            <div className="flex rounded-lg overflow-hidden border border-gray-200">
-              {([['waiting', 'Ожидает'], ['partial', 'Частично'], ['paid', 'Оплачено']] as const).map(([val, label]) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setPaymentStatus(val)}
-                  className={`flex-1 py-1.5 text-xs font-medium transition-colors ${paymentStatus === val ? 'bg-[#376E6F] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Источник</label>
-            <select
-              value={source}
-              onChange={e => setSource(e.target.value as BookingSource)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-            >
-              {SOURCES.map(s => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий</label>
-            <textarea
-              value={comment}
-              onChange={e => setComment(e.target.value)}
-              rows={2}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F] resize-none"
-              placeholder="Дополнительная информация..."
-            />
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            {booking && (
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={isLoading}
-                className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-              >
-                Удалить
-              </button>
-            )}
-            <button
-              type="submit"
-              disabled={isLoading || nights <= 0}
-              className="flex-1 bg-[#376E6F] text-white py-2 rounded-lg text-sm font-medium hover:bg-[#1C3334] transition-colors disabled:opacity-50"
-            >
-              {isLoading ? 'Сохранение...' : 'Сохранить'}
-            </button>
-          </div>
-        </form>
+        {formContent}
       </div>
     </div>
   )
