@@ -59,7 +59,54 @@ export function GuestsPage() {
           <div className="w-8 h-8 border-4 border-[#376E6F] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <>
+        {/* Mobile: accordion cards */}
+        <div className="md:hidden space-y-2">
+          {filtered.length === 0 ? (
+            <div className="text-center text-gray-400 text-sm py-8">Гостей не найдено</div>
+          ) : filtered.map(guest => (
+            <div key={guest.name} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <button
+                className="w-full px-4 py-3 flex items-center justify-between text-left min-h-[56px]"
+                onClick={() => setSelectedGuest(guest.name === selectedGuest ? null : guest.name)}
+              >
+                <div>
+                  <div className="font-medium text-sm text-gray-800">{guest.name}</div>
+                  {guest.phone && <div className="text-xs text-gray-400">{guest.phone}</div>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{guest.count} броней</span>
+                  <span className="text-gray-400 text-sm">{selectedGuest === guest.name ? '▴' : '▾'}</span>
+                </div>
+              </button>
+              {selectedGuest === guest.name && (
+                <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+                  <div className="space-y-2">
+                    {guest.bookings.map((b, i) => (
+                      <div key={i} className="border border-gray-200 rounded-lg p-2 bg-white">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-gray-700">{b.properties?.name ?? '—'}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                            b.payment_status === 'paid' ? 'bg-emerald-100 text-emerald-700' :
+                            b.payment_status === 'partial' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {b.payment_status === 'paid' ? 'Оплачено' : b.payment_status === 'partial' ? 'Частично' : 'Ожидает'}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">{b.check_in} → {b.check_out}</div>
+                        <div className="text-xs font-medium text-[#376E6F]">{b.total_price.toLocaleString()} ₸</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop: original table + side panel */}
+        <div className="hidden md:grid gap-4 md:grid-cols-2">
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <table className="w-full">
               <thead>
@@ -124,6 +171,7 @@ export function GuestsPage() {
             </div>
           )}
         </div>
+        </>
       )}
     </div>
   )
