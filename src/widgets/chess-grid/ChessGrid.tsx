@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef, useEffect } from 'react'
 import { format, eachDayOfInterval, parseISO, isToday, isSameDay, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import type { Property } from '@/entities/property/types'
@@ -8,11 +8,13 @@ import { useSettings } from '@/entities/settings/queries'
 interface Props {
   properties: Property[]
   bookings: (Booking | BookingWithProperty)[]
-  currentMonth: Date
   from: string
   to: string
   onCellClick: (date: string, propertyId: string) => void
   onBookingClick: (booking: Booking) => void
+  onLoadPrev: () => void
+  onLoadNext: () => void
+  scrollContainerRef: React.RefObject<HTMLDivElement>
 }
 
 function hexToRgb(hex: string) {
@@ -22,10 +24,44 @@ function hexToRgb(hex: string) {
     : { r: 55, g: 110, b: 111 }
 }
 
-export function ChessGrid({ properties, bookings, from, to, onCellClick, onBookingClick }: Props) {
+export function ChessGrid({
+  properties,
+  bookings,
+  from,
+  to,
+  onCellClick,
+  onBookingClick,
+  onLoadPrev,
+  onLoadNext,
+  scrollContainerRef,
+}: Props) {
   const { data: settings } = useSettings()
   const showFullText = settings?.show_full_text ?? true
   const rowHeightClass = settings?.compact_mode ? 'h-7' : 'h-10'
+
+  const leftSentinelRef = useRef<HTMLTableCellElement>(null)
+  const rightSentinelRef = useRef<HTMLTableCellElement>(null)
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container || !leftSentinelRef.current || !rightSentinelRef.current) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          if (entry.target === leftSentinelRef.current) onLoadPrev()
+          if (entry.target === rightSentinelRef.current) onLoadNext()
+        }
+      },
+      { root: container, threshold: 0.1 }
+    )
+
+    observer.observe(leftSentinelRef.current)
+    observer.observe(rightSentinelRef.current)
+
+    return () => observer.disconnect()
+  }, [onLoadPrev, onLoadNext, scrollContainerRef])
 
   const days = eachDayOfInterval({
     start: parseISO(from),
@@ -55,10 +91,15 @@ export function ChessGrid({ properties, bookings, from, to, onCellClick, onBooki
   }
 
   return (
-    <div className="overflow-auto flex-1">
+    <div ref={scrollContainerRef} className="overflow-auto flex-1">
       <table className="border-collapse" style={{ minWidth: 'max-content' }}>
         <thead>
           <tr>
+            <th
+              ref={leftSentinelRef}
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
             <th className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-3 py-2 text-left text-xs text-gray-500 font-medium min-w-[160px]">
               Квартира
             </th>
@@ -78,6 +119,11 @@ export function ChessGrid({ properties, bookings, from, to, onCellClick, onBooki
                 </th>
               )
             })}
+            <th
+              ref={rightSentinelRef}
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
           </tr>
         </thead>
         <tbody>
