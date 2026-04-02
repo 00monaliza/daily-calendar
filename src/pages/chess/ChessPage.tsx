@@ -115,8 +115,6 @@ export function ChessPage() {
     setModalOpen(true)
   }
 
-  const currentMonth = new Date(from)
-
   return (
     <div className="flex flex-col h-full">
       <SummaryBar bookings={bookings} properties={properties} from={from} to={to} />
