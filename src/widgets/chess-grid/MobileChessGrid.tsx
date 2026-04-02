@@ -14,7 +14,7 @@ interface Props {
   onBookingClick: (booking: Booking) => void
   onLoadPrev: () => void
   onLoadNext: () => void
-  scrollContainerRef: React.RefObject<HTMLDivElement>
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>
 }
 
 function hexToRgb(hex: string) {
