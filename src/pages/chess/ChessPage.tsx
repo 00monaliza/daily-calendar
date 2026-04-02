@@ -56,6 +56,26 @@ export function ChessPage() {
     setTo(prev => format(endOfMonth(addMonths(parseISO(prev), EXTEND_MONTHS)), 'yyyy-MM-dd'))
   }, [])
 
+  function teleportToMonth(yearMonth: string) {
+    if (!yearMonth) return
+    const [year, month] = yearMonth.split('-').map(Number)
+    const target = new Date(year, month - 1, 1)
+    const newFrom = format(subMonths(startOfMonth(target), 2), 'yyyy-MM-dd')
+    const newTo = format(endOfMonth(addMonths(target, 2)), 'yyyy-MM-dd')
+    isTeleportRef.current = true
+    teleportTargetRef.current = format(target, 'yyyy-MM-dd')
+    setFrom(newFrom)
+    setTo(newTo)
+  }
+
+  function resetToCurrentMonth() {
+    isTeleportRef.current = true
+    teleportTargetRef.current = format(startOfMonth(new Date()), 'yyyy-MM-dd')
+    const w = initialWindow()
+    setFrom(w.from)
+    setTo(w.to)
+  }
+
   useEffect(() => {
     const container = scrollContainerRef.current
     if (isTeleportRef.current || !container) {
@@ -68,6 +88,16 @@ export function ChessPage() {
     }
     prevFromRef.current = from
   }, [from])
+
+  useEffect(() => {
+    const target = teleportTargetRef.current
+    const container = scrollContainerRef.current
+    if (!target || !container) return
+    const dayOffset = differenceInCalendarDays(parseISO(target), parseISO(from))
+    container.scrollLeft = Math.max(0, dayOffset * COL_WIDTH)
+    teleportTargetRef.current = null
+    isTeleportRef.current = false
+  }, [from, to])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
@@ -120,28 +150,21 @@ export function ChessPage() {
     <div className="flex flex-col h-full">
       <SummaryBar bookings={bookings} properties={properties} from={from} to={to} />
 
-      {/* Date range picker */}
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-white border-b border-gray-200 flex-wrap">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <label className="text-xs text-gray-400 flex-shrink-0">С</label>
-          <input
-            type="date"
-            value={from}
-            max={to}
-            onChange={e => setFrom(e.target.value)}
-            className="flex-1 min-w-0 text-sm text-gray-800 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#376E6F]/30 focus:border-[#376E6F]"
-          />
-        </div>
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <label className="text-xs text-gray-400 flex-shrink-0">По</label>
-          <input
-            type="date"
-            value={to}
-            min={from}
-            onChange={e => setTo(e.target.value)}
-            className="flex-1 min-w-0 text-sm text-gray-800 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#376E6F]/30 focus:border-[#376E6F]"
-          />
-        </div>
+      {/* Teleport date picker */}
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-white border-b border-gray-200">
+        <label className="text-xs text-gray-400 flex-shrink-0">Перейти к</label>
+        <input
+          type="month"
+          defaultValue={format(new Date(), 'yyyy-MM')}
+          onChange={e => teleportToMonth(e.target.value)}
+          className="flex-1 min-w-0 text-sm text-gray-800 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#376E6F]/30 focus:border-[#376E6F]"
+        />
+        <button
+          onClick={resetToCurrentMonth}
+          className="text-xs text-[#376E6F] hover:underline flex-shrink-0 py-1.5 px-1"
+        >
+          Сегодня
+        </button>
       </div>
 
       {isLoading ? (
@@ -156,6 +179,9 @@ export function ChessPage() {
           to={to}
           onCellClick={handleCellClick}
           onBookingClick={handleBookingClick}
+          onLoadPrev={extendPrev}
+          onLoadNext={extendNext}
+          scrollContainerRef={scrollContainerRef}
         />
       ) : (
         <ChessGrid
@@ -165,6 +191,9 @@ export function ChessPage() {
           to={to}
           onCellClick={handleCellClick}
           onBookingClick={handleBookingClick}
+          onLoadPrev={extendPrev}
+          onLoadNext={extendNext}
+          scrollContainerRef={scrollContainerRef}
         />
       )}
 
