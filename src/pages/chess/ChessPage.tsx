@@ -37,6 +37,7 @@ export function ChessPage() {
 
   const [from, setFrom] = useState(() => initialWindow().from)
   const [to, setTo] = useState(() => initialWindow().to)
+  const [monthInputValue, setMonthInputValue] = useState(() => format(new Date(), 'yyyy-MM'))
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isLoadingMoreRef = useRef(false)
@@ -58,6 +59,7 @@ export function ChessPage() {
 
   function teleportToMonth(yearMonth: string) {
     if (!yearMonth) return
+    setMonthInputValue(yearMonth)
     const [year, month] = yearMonth.split('-').map(Number)
     const target = new Date(year, month - 1, 1)
     const newFrom = format(subMonths(startOfMonth(target), 2), 'yyyy-MM-dd')
@@ -69,6 +71,7 @@ export function ChessPage() {
   }
 
   function resetToCurrentMonth() {
+    setMonthInputValue(format(new Date(), 'yyyy-MM'))
     isTeleportRef.current = true
     teleportTargetRef.current = format(startOfMonth(new Date()), 'yyyy-MM-dd')
     const w = initialWindow()
@@ -152,10 +155,11 @@ export function ChessPage() {
 
       {/* Teleport date picker */}
       <div className="flex items-center gap-2 px-4 py-2.5 bg-white border-b border-gray-200">
-        <label className="text-xs text-gray-400 flex-shrink-0">Перейти к</label>
+        <label htmlFor="chess-teleport-month" className="text-xs text-gray-400 flex-shrink-0">Перейти к</label>
         <input
+          id="chess-teleport-month"
           type="month"
-          defaultValue={format(new Date(), 'yyyy-MM')}
+          value={monthInputValue}
           onChange={e => teleportToMonth(e.target.value)}
           className="flex-1 min-w-0 text-sm text-gray-800 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#376E6F]/30 focus:border-[#376E6F]"
         />
