@@ -8,11 +8,14 @@ test.describe('Шахматка', () => {
     await page.goto('/')
   })
 
-  test('страница загружается и показывает дни текущего месяца', async ({ page }) => {
+  test('страница загружается и показывает сегодняшний день', async ({ page }) => {
     const today = new Date()
     const dayNum = String(today.getDate())
-    // The grid header shows day numbers — today's day number should be visible
-    await expect(page.locator('thead').getByText(dayNum).first()).toBeVisible()
+    // Find the th that contains today's day number AND has the today-highlight class
+    const todayTh = page.locator('thead th').filter({
+      has: page.locator(`div.font-bold:text("${dayNum}")`)
+    })
+    await expect(todayTh.first()).toHaveAttribute('class', /376E6F/)
   })
 
   test('кнопка "Сегодня" присутствует', async ({ page }) => {
@@ -24,10 +27,10 @@ test.describe('Шахматка', () => {
   })
 
   test('teleport: выбор месяца показывает дни выбранного месяца', async ({ page }) => {
-    const nextMonth = addMonths(new Date(), 1)
-    const yearMonth = format(nextMonth, 'yyyy-MM')
-    const lastDayOfNextMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0)
-    const lastDay = String(lastDayOfNextMonth.getDate())
+    const targetMonth = addMonths(new Date(), 6)
+    const yearMonth = format(targetMonth, 'yyyy-MM')
+    const lastDayOfTargetMonth = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0)
+    const lastDay = String(lastDayOfTargetMonth.getDate())
 
     await page.getByLabel('Перейти к').fill(yearMonth)
     await page.getByLabel('Перейти к').dispatchEvent('change')
@@ -37,17 +40,21 @@ test.describe('Шахматка', () => {
 
   test('кнопка "Сегодня" возвращает к текущему месяцу', async ({ page }) => {
     const today = new Date()
-    const nextMonth = addMonths(today, 3)
-    const yearMonth = format(nextMonth, 'yyyy-MM')
+    // Teleport 6 months ahead (outside the initial ±2 month window)
+    const farMonth = addMonths(today, 6)
+    const yearMonth = format(farMonth, 'yyyy-MM')
 
-    // Teleport away
     await page.getByLabel('Перейти к').fill(yearMonth)
     await page.getByLabel('Перейти к').dispatchEvent('change')
 
-    // Come back
+    // Come back to today
     await page.getByRole('button', { name: 'Сегодня' }).click()
 
+    // Verify today's highlighted column is visible (the teal-colored cell for today)
     const dayNum = String(today.getDate())
-    await expect(page.locator('thead').getByText(dayNum).first()).toBeVisible()
+    const todayTh = page.locator('thead th').filter({
+      has: page.locator(`div.font-bold:text("${dayNum}")`)
+    })
+    await expect(todayTh.first()).toHaveAttribute('class', /376E6F/)
   })
 })
