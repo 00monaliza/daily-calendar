@@ -1,5 +1,13 @@
-import { useState } from 'react'
-import { format, startOfMonth, endOfMonth } from 'date-fns'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  addMonths,
+  subMonths,
+  parseISO,
+  differenceInCalendarDays,
+} from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
 import { useProperties } from '@/entities/property/queries'
 import { useBookings } from '@/entities/booking/queries'
@@ -10,12 +18,55 @@ import type { Booking } from '@/entities/booking/types'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { MobileChessGrid } from '@/widgets/chess-grid/MobileChessGrid'
 
-export function ChessPage() {
-  const isMobile = useIsMobile()
-  const { user } = useUser()
+const COL_WIDTH = 36
+const EXTEND_MONTHS = 3
+const MAX_WINDOW_MONTHS = 12
 
-  const [from, setFrom] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'))
-  const [to, setTo] = useState(() => format(endOfMonth(new Date()), 'yyyy-MM-dd'))
+function initialWindow() {
+  const now = new Date()
+  return {
+    from: format(subMonths(startOfMonth(now), 2), 'yyyy-MM-dd'),
+    to: format(endOfMonth(addMonths(now, 2)), 'yyyy-MM-dd'),
+  }
+}
+
+export function ChessPage() {
+  const { user } = useUser()
+  const isMobile = useIsMobile()
+
+  const [from, setFrom] = useState(() => initialWindow().from)
+  const [to, setTo] = useState(() => initialWindow().to)
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const isLoadingMoreRef = useRef(false)
+  const prevFromRef = useRef(from)
+  const isTeleportRef = useRef(false)
+  const teleportTargetRef = useRef<string | null>(null)
+
+  const extendPrev = useCallback(() => {
+    if (isLoadingMoreRef.current) return
+    isLoadingMoreRef.current = true
+    setFrom(prev => format(subMonths(parseISO(prev), EXTEND_MONTHS), 'yyyy-MM-dd'))
+  }, [])
+
+  const extendNext = useCallback(() => {
+    if (isLoadingMoreRef.current) return
+    isLoadingMoreRef.current = true
+    setTo(prev => format(endOfMonth(addMonths(parseISO(prev), EXTEND_MONTHS)), 'yyyy-MM-dd'))
+  }, [])
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (isTeleportRef.current || !container) {
+      prevFromRef.current = from
+      return
+    }
+    const daysDiff = differenceInCalendarDays(parseISO(from), parseISO(prevFromRef.current))
+    if (daysDiff !== 0) {
+      container.scrollLeft -= daysDiff * COL_WIDTH
+    }
+    prevFromRef.current = from
+  }, [from])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
@@ -24,6 +75,31 @@ export function ChessPage() {
 
   const { data: properties = [] } = useProperties(user?.id)
   const { data: bookings = [], isLoading } = useBookings(user?.id, from, to)
+
+  useEffect(() => {
+    isLoadingMoreRef.current = false
+
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const totalDays = differenceInCalendarDays(parseISO(to), parseISO(from)) + 1
+    if (totalDays <= MAX_WINDOW_MONTHS * 31) return
+
+    const anchorIndex = Math.floor(container.scrollLeft / COL_WIDTH)
+    const totalDaysInWindow = differenceInCalendarDays(parseISO(to), parseISO(from))
+    const safeIndex = Math.min(Math.max(anchorIndex, 0), totalDaysInWindow)
+    const windowStart = parseISO(from)
+    const anchorDateStr = format(
+      new Date(windowStart.getTime() + safeIndex * 24 * 60 * 60 * 1000),
+      'yyyy-MM-dd'
+    )
+
+    const trimmedFrom = format(subMonths(startOfMonth(parseISO(anchorDateStr)), 6), 'yyyy-MM-dd')
+    const trimmedTo = format(endOfMonth(addMonths(parseISO(anchorDateStr), 6)), 'yyyy-MM-dd')
+
+    if (trimmedFrom > from) setFrom(trimmedFrom)
+    if (trimmedTo < to) setTo(trimmedTo)
+  }, [bookings]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleCellClick(date: string, propertyId: string) {
     setPrefillDate(date)
@@ -37,21 +113,6 @@ export function ChessPage() {
     setPrefillDate(null)
     setPrefillPropertyId(null)
     setModalOpen(true)
-  }
-
-  function handleFromChange(value: string) {
-    setFrom(value)
-    if (value > to) setTo(value)
-  }
-
-  function handleToChange(value: string) {
-    setTo(value)
-    if (value < from) setFrom(value)
-  }
-
-  function resetToCurrentMonth() {
-    setFrom(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
-    setTo(format(endOfMonth(new Date()), 'yyyy-MM-dd'))
   }
 
   const currentMonth = new Date(from)
@@ -68,7 +129,7 @@ export function ChessPage() {
             type="date"
             value={from}
             max={to}
-            onChange={e => handleFromChange(e.target.value)}
+            onChange={e => setFrom(e.target.value)}
             className="flex-1 min-w-0 text-sm text-gray-800 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#376E6F]/30 focus:border-[#376E6F]"
           />
         </div>
@@ -78,16 +139,10 @@ export function ChessPage() {
             type="date"
             value={to}
             min={from}
-            onChange={e => handleToChange(e.target.value)}
+            onChange={e => setTo(e.target.value)}
             className="flex-1 min-w-0 text-sm text-gray-800 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#376E6F]/30 focus:border-[#376E6F]"
           />
         </div>
-        <button
-          onClick={resetToCurrentMonth}
-          className="text-xs text-[#376E6F] hover:underline flex-shrink-0 py-1.5 px-1"
-        >
-          Текущий месяц
-        </button>
       </div>
 
       {isLoading ? (
