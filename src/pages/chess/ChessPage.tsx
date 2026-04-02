@@ -7,6 +7,7 @@ import {
   subMonths,
   parseISO,
   differenceInCalendarDays,
+  addDays,
 } from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
 import { useProperties } from '@/entities/property/queries'
@@ -90,7 +91,7 @@ export function ChessPage() {
     const safeIndex = Math.min(Math.max(anchorIndex, 0), totalDaysInWindow)
     const windowStart = parseISO(from)
     const anchorDateStr = format(
-      new Date(windowStart.getTime() + safeIndex * 24 * 60 * 60 * 1000),
+      addDays(windowStart, safeIndex),
       'yyyy-MM-dd'
     )
 
@@ -151,7 +152,6 @@ export function ChessPage() {
         <MobileChessGrid
           properties={properties}
           bookings={bookings}
-          currentMonth={currentMonth}
           from={from}
           to={to}
           onCellClick={handleCellClick}
@@ -161,7 +161,6 @@ export function ChessPage() {
         <ChessGrid
           properties={properties}
           bookings={bookings}
-          currentMonth={currentMonth}
           from={from}
           to={to}
           onCellClick={handleCellClick}
