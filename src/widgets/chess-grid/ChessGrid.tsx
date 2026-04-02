@@ -5,6 +5,8 @@ import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
 import { useSettings } from '@/entities/settings/queries'
 
+const COL_WIDTH = 36
+
 interface Props {
   properties: Property[]
   bookings: (Booking | BookingWithProperty)[]
@@ -153,14 +155,13 @@ export function ChessGrid({
                     const isStart = isSameDay(parseISO(booking.check_in), day)
                     const isEnd = isSameDay(parseISO(booking.check_out), day)
 
-                    const COL_W = 36
                     let textOverlay: React.ReactNode = null
                     if (isStart) {
                       const checkOut = parseISO(booking.check_out)
                       const rangeEnd = parseISO(to)
                       const effectiveEnd = checkOut <= rangeEnd ? checkOut : rangeEnd
                       const spanDays = Math.max(1, differenceInCalendarDays(effectiveEnd, day) + 1)
-                      const textWidth = spanDays * COL_W - 6
+                      const textWidth = spanDays * COL_WIDTH - 6
                       const tooltipText = [booking.guest_name, booking.comment].filter(Boolean).join(' — ')
 
                       textOverlay = (
