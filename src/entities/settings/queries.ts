@@ -10,7 +10,9 @@ export function useSettings() {
     queryKey: ['settings', user?.id],
     queryFn: async (): Promise<UserSettings> => {
       if (!user) throw new Error('Not authenticated')
-      const { data } = await settingsApi.get(user.id)
+      const { data, error } = await settingsApi.get(user.id)
+      // PGRST116 = no rows found — first time user, return defaults
+      if (error && error.code !== 'PGRST116') throw error
       if (!data) return { user_id: user.id, ...DEFAULT_SETTINGS }
       return data as UserSettings
     },
