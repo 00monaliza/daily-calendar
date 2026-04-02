@@ -2,6 +2,7 @@ import { format, eachDayOfInterval, parseISO, isToday, isSameDay } from 'date-fn
 import { ru } from 'date-fns/locale'
 import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
+import { useSettings } from '@/entities/settings/queries'
 
 interface Props {
   properties: Property[]
@@ -21,6 +22,10 @@ function hexToRgb(hex: string) {
 }
 
 export function MobileChessGrid({ properties, bookings, from, to, onCellClick, onBookingClick }: Props) {
+  const { data: settings } = useSettings()
+  const showFullText = settings?.show_full_text ?? true
+  const rowHeight = settings?.compact_mode ? 32 : 44
+
   const days = eachDayOfInterval({
     start: parseISO(from),
     end: parseISO(to),
@@ -114,7 +119,7 @@ export function MobileChessGrid({ properties, bookings, from, to, onCellClick, o
                       <td
                         key={dateStr}
                         className={`border-b border-gray-100 p-0 cursor-pointer relative ${today ? 'border-l-2 border-l-[#376E6F]' : ''}`}
-                        style={{ height: 44 }}
+                        style={{ height: rowHeight }}
                         onClick={() => onBookingClick(booking)}
                       >
                         <div
@@ -129,10 +134,12 @@ export function MobileChessGrid({ properties, bookings, from, to, onCellClick, o
                         >
                           {isStart && (
                             <span
-                              className="text-[10px] font-medium px-1 truncate"
+                              className={showFullText ? 'text-[10px] font-medium px-1 whitespace-normal break-words leading-tight' : 'text-[10px] font-medium px-1 truncate'}
                               style={{ color: property.color }}
                             >
-                              {booking.guest_name}
+                              {showFullText && booking.comment
+                                ? `${booking.guest_name} — ${booking.comment}`
+                                : booking.guest_name}
                             </span>
                           )}
                         </div>
@@ -144,7 +151,7 @@ export function MobileChessGrid({ properties, bookings, from, to, onCellClick, o
                     <td
                       key={dateStr}
                       className={`border border-gray-200 cursor-pointer active:bg-[#376E6F]/20 transition-colors ${today ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5' : ''}`}
-                      style={{ height: 44 }}
+                      style={{ height: rowHeight }}
                       onClick={() => onCellClick(dateStr, property.id)}
                     />
                   )

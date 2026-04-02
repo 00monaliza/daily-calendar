@@ -3,6 +3,7 @@ import { format, eachDayOfInterval, parseISO, isToday, isSameDay, differenceInCa
 import { ru } from 'date-fns/locale'
 import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
+import { useSettings } from '@/entities/settings/queries'
 
 interface Props {
   properties: Property[]
@@ -22,6 +23,10 @@ function hexToRgb(hex: string) {
 }
 
 export function ChessGrid({ properties, bookings, from, to, onCellClick, onBookingClick }: Props) {
+  const { data: settings } = useSettings()
+  const showFullText = settings?.show_full_text ?? true
+  const rowHeightClass = settings?.compact_mode ? 'h-7' : 'h-10'
+
   const days = eachDayOfInterval({
     start: parseISO(from),
     end: parseISO(to),
@@ -119,12 +124,12 @@ export function ChessGrid({ properties, bookings, from, to, onCellClick, onBooki
                           title={tooltipText}
                         >
                           <span
-                            className="text-xs font-medium leading-tight whitespace-normal break-words"
+                            className={showFullText ? 'text-xs font-medium leading-tight whitespace-normal break-words' : 'text-xs font-medium leading-tight truncate'}
                             style={{ color: property.color }}
                           >
                             {booking.guest_name}
                           </span>
-                          {booking.comment && (
+                          {showFullText && booking.comment && (
                             <span className="text-[10px] text-gray-500 leading-tight whitespace-normal break-words mt-0.5 line-clamp-2">
                               {booking.comment}
                             </span>
@@ -136,7 +141,7 @@ export function ChessGrid({ properties, bookings, from, to, onCellClick, onBooki
                     return (
                       <td
                         key={dateStr}
-                        className={`border-b border-gray-100 h-10 p-0 cursor-pointer relative overflow-visible ${today ? 'border-l-2 border-l-[#376E6F]' : ''}`}
+                        className={`border-b border-gray-100 ${rowHeightClass} p-0 cursor-pointer relative overflow-visible ${today ? 'border-l-2 border-l-[#376E6F]' : ''}`}
                         onClick={() => onBookingClick(booking)}
                       >
                         <div
@@ -157,7 +162,7 @@ export function ChessGrid({ properties, bookings, from, to, onCellClick, onBooki
                   return (
                     <td
                       key={dateStr}
-                      className={`border border-gray-200 h-10 cursor-pointer hover:bg-[#376E6F]/10 transition-colors ${today ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5' : ''}`}
+                      className={`border border-gray-200 ${rowHeightClass} cursor-pointer hover:bg-[#376E6F]/10 transition-colors ${today ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5' : ''}`}
                       onClick={() => onCellClick(dateStr, property.id)}
                     />
                   )

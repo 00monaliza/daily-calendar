@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import { TopNav } from '@/widgets/top-nav/TopNav'
 import { BottomNav } from '@/widgets/bottom-nav/BottomNav'
 import { BookingModal } from '@/widgets/booking-modal/BookingModal'
+import { ToastContainer } from '@/shared/ui/Toast'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { useProperties } from '@/entities/property/queries'
 import { useUser } from '@/features/auth/useUser'
@@ -31,6 +32,7 @@ export function AppLayout() {
           onClose={() => setFabModalOpen(false)}
         />
       )}
+      <ToastContainer />
     </div>
   )
 }

@@ -5,6 +5,8 @@ import { ChessPage } from '@/pages/chess/ChessPage'
 import { PropertiesPage } from '@/pages/properties/PropertiesPage'
 import { FinancesPage } from '@/pages/finances/FinancesPage'
 import { GuestsPage } from '@/pages/guests/GuestsPage'
+import { ProfilePage } from '@/pages/profile/ProfilePage'
+import { SettingsPage } from '@/pages/settings/SettingsPage'
 import { AppLayout } from '@/app/providers/AppLayout'
 
 export function AppRouter() {
@@ -23,6 +25,8 @@ export function AppRouter() {
         <Route path="properties" element={<PropertiesPage />} />
         <Route path="finances" element={<FinancesPage />} />
         <Route path="guests" element={<GuestsPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

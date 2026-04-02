@@ -72,8 +72,8 @@ export function UserMenu() {
 
             {/* Items */}
             <div className="py-1">
-              <MenuItem icon={<User size={18} />} label="Личный кабинет" onClick={() => setOpen(false)} />
-              <MenuItem icon={<Gear size={18} />} label="Настройки" onClick={() => setOpen(false)} />
+              <MenuItem icon={<User size={18} />} label="Личный кабинет" onClick={() => { setOpen(false); navigate('/profile') }} />
+              <MenuItem icon={<Gear size={18} />} label="Настройки" onClick={() => { setOpen(false); navigate('/settings') }} />
             </div>
 
             <div className="border-t border-gray-100 py-1">
