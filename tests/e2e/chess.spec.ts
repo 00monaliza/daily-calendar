@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { login } from './helpers/auth'
-import { format, addMonths, subMonths } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { format, addMonths } from 'date-fns'
 
 test.describe('Шахматка', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,40 +8,46 @@ test.describe('Шахматка', () => {
     await page.goto('/')
   })
 
-  test('страница загружается и показывает текущий месяц', async ({ page }) => {
-    const now = new Date()
-    const monthLabel = format(now, 'LLLL yyyy', { locale: ru })
-    await expect(page.getByText(monthLabel)).toBeVisible()
+  test('страница загружается и показывает дни текущего месяца', async ({ page }) => {
+    const today = new Date()
+    const dayNum = String(today.getDate())
+    // The grid header shows day numbers — today's day number should be visible
+    await expect(page.locator('thead').getByText(dayNum).first()).toBeVisible()
   })
 
   test('кнопка "Сегодня" присутствует', async ({ page }) => {
-    await expect(page.getByText('Сегодня')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Сегодня' })).toBeVisible()
   })
 
-  test('навигация назад — показывает предыдущий месяц', async ({ page }) => {
-    const prevMonth = subMonths(new Date(), 1)
-    const prevLabel = format(prevMonth, 'LLLL yyyy', { locale: ru })
-
-    await page.getByRole('button', { name: '‹' }).click()
-    await expect(page.getByText(prevLabel)).toBeVisible()
+  test('инпут "Перейти к" присутствует', async ({ page }) => {
+    await expect(page.getByLabel('Перейти к')).toBeVisible()
   })
 
-  test('навигация вперёд — показывает следующий месяц', async ({ page }) => {
+  test('teleport: выбор месяца показывает дни выбранного месяца', async ({ page }) => {
     const nextMonth = addMonths(new Date(), 1)
-    const nextLabel = format(nextMonth, 'LLLL yyyy', { locale: ru })
+    const yearMonth = format(nextMonth, 'yyyy-MM')
+    const lastDayOfNextMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0)
+    const lastDay = String(lastDayOfNextMonth.getDate())
 
-    await page.getByRole('button', { name: '›' }).click()
-    await expect(page.getByText(nextLabel)).toBeVisible()
+    await page.getByLabel('Перейти к').fill(yearMonth)
+    await page.getByLabel('Перейти к').dispatchEvent('change')
+
+    await expect(page.locator('thead').getByText(lastDay).first()).toBeVisible()
   })
 
   test('кнопка "Сегодня" возвращает к текущему месяцу', async ({ page }) => {
-    const now = new Date()
-    const currentLabel = format(now, 'LLLL yyyy', { locale: ru })
+    const today = new Date()
+    const nextMonth = addMonths(today, 3)
+    const yearMonth = format(nextMonth, 'yyyy-MM')
 
-    // Уходим на следующий месяц
-    await page.getByRole('button', { name: '›' }).click()
-    // Возвращаемся кнопкой "Сегодня"
-    await page.getByText('Сегодня').click()
-    await expect(page.getByText(currentLabel)).toBeVisible()
+    // Teleport away
+    await page.getByLabel('Перейти к').fill(yearMonth)
+    await page.getByLabel('Перейти к').dispatchEvent('change')
+
+    // Come back
+    await page.getByRole('button', { name: 'Сегодня' }).click()
+
+    const dayNum = String(today.getDate())
+    await expect(page.locator('thead').getByText(dayNum).first()).toBeVisible()
   })
 })
