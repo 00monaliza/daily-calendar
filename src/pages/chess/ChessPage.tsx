@@ -61,6 +61,7 @@ export function ChessPage() {
     if (!yearMonth) return
     setMonthInputValue(yearMonth)
     const [year, month] = yearMonth.split('-').map(Number)
+    if (isNaN(year) || isNaN(month)) return
     const target = new Date(year, month - 1, 1)
     const newFrom = format(subMonths(startOfMonth(target), 2), 'yyyy-MM-dd')
     const newTo = format(endOfMonth(addMonths(target, 2)), 'yyyy-MM-dd')
@@ -71,14 +72,19 @@ export function ChessPage() {
   }
 
   function resetToCurrentMonth() {
-    setMonthInputValue(format(new Date(), 'yyyy-MM'))
+    const now = new Date()
+    setMonthInputValue(format(now, 'yyyy-MM'))
     isTeleportRef.current = true
-    teleportTargetRef.current = format(startOfMonth(new Date()), 'yyyy-MM-dd')
+    teleportTargetRef.current = format(startOfMonth(now), 'yyyy-MM-dd')
     const w = initialWindow()
     setFrom(w.from)
     setTo(w.to)
   }
 
+  // NOTE: This effect MUST appear before the teleport-scroll effect in the component body.
+  // React runs effects in declaration order within a commit. The teleport-scroll effect
+  // reads isTeleportRef.current (set to false by it), but this effect reads it while still
+  // true (skipping the compensation). Swapping the order would cause both to fire on teleport.
   useEffect(() => {
     const container = scrollContainerRef.current
     if (isTeleportRef.current || !container) {

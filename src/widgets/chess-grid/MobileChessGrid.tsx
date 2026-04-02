@@ -42,6 +42,9 @@ export function MobileChessGrid({
   const leftSentinelRef = useRef<HTMLTableCellElement>(null)
   const rightSentinelRef = useRef<HTMLTableCellElement>(null)
 
+  // NOTE: onLoadPrev and onLoadNext must be stable references (useCallback with empty deps
+  // or module-level functions) — otherwise this observer disconnects and reconnects on every
+  // render, causing spurious load triggers when both sentinels are briefly visible.
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container || !leftSentinelRef.current || !rightSentinelRef.current) return
