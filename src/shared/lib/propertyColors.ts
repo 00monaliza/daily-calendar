@@ -11,6 +11,8 @@ export const PROPERTY_COLOR_PALETTE = [
   '#F39C12', // yellow-orange
 ]
 
+export const DB_DEFAULT_PROPERTY_COLOR = PROPERTY_COLOR_PALETTE[0]
+
 /** djb2 hash of a string → integer */
 function hashString(str: string): number {
   let hash = 5381
@@ -38,5 +40,5 @@ export function derivePropertyColor(id: string): string {
  * the DB-default color and therefore all look the same.
  */
 export function getPropertyColor(property: { id: string; color: string }): string {
-  return property.color !== '#376E6F' ? property.color : derivePropertyColor(property.id)
+  return property.color !== DB_DEFAULT_PROPERTY_COLOR ? property.color : derivePropertyColor(property.id)
 }
