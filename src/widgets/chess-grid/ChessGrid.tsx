@@ -50,6 +50,8 @@ export function ChessGrid({
   const leftSentinelRef = useRef<HTMLTableCellElement>(null)
   const rightSentinelRef = useRef<HTMLTableCellElement>(null)
 
+  // onLoadPrev and onLoadNext must be stable (useCallback with []) so this
+  // effect does not reconnect the observer on every render
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container || !leftSentinelRef.current || !rightSentinelRef.current) return
