@@ -4,6 +4,7 @@ import { ru } from 'date-fns/locale'
 import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
 import { useSettings } from '@/entities/settings/queries'
+import { getPropertyColor } from '@/shared/lib/propertyColors'
 
 const COL_WIDTH = 36
 
@@ -26,6 +27,11 @@ function hexToRgb(hex: string) {
     : { r: 55, g: 110, b: 111 }
 }
 
+function isDayWeekend(day: Date) {
+  const d = day.getDay()
+  return d === 0 || d === 6
+}
+
 export function ChessGrid({
   properties,
   bookings,
@@ -44,9 +50,6 @@ export function ChessGrid({
   const leftSentinelRef = useRef<HTMLTableCellElement>(null)
   const rightSentinelRef = useRef<HTMLTableCellElement>(null)
 
-  // NOTE: onLoadPrev and onLoadNext must be stable references (useCallback with empty deps
-  // or module-level functions) — otherwise this observer disconnects and reconnects on every
-  // render, causing spurious load triggers when both sentinels are briefly visible.
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container || !leftSentinelRef.current || !rightSentinelRef.current) return
@@ -72,6 +75,17 @@ export function ChessGrid({
     start: parseISO(from),
     end: parseISO(to),
   })
+
+  const monthGroups = days.reduce<{ label: string; count: number }[]>((acc, day) => {
+    const label = format(day, 'LLLL yyyy', { locale: ru })
+    const last = acc[acc.length - 1]
+    if (last && last.label === label) {
+      last.count++
+    } else {
+      acc.push({ label, count: 1 })
+    }
+    return acc
+  }, [])
 
   const bookingMap = new Map<string, Map<string, Booking>>()
   for (const booking of bookings) {
@@ -99,33 +113,72 @@ export function ChessGrid({
     <div ref={scrollContainerRef} className="overflow-auto flex-1">
       <table className="border-collapse" style={{ minWidth: 'max-content' }}>
         <thead>
+          {/* Row 1: month labels */}
           <tr>
             <th
               ref={leftSentinelRef}
+              className="sticky top-0 bg-white"
               style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
               aria-hidden="true"
             />
-            <th className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-3 py-2 text-left text-xs text-gray-500 font-medium min-w-[160px]">
+            {/* Empty corner cell aligned with property name column */}
+            <th
+              className="sticky left-0 top-0 z-30 bg-white border-b border-r border-gray-200 min-w-[160px]"
+              style={{ height: 24 }}
+            />
+            {monthGroups.map(group => (
+              <th
+                key={group.label}
+                colSpan={group.count}
+                className="sticky top-0 z-10 bg-white border-b border-r border-gray-200 px-2 text-center text-xs text-gray-500 font-semibold capitalize"
+                style={{ height: 24 }}
+              >
+                {group.label}
+              </th>
+            ))}
+            <th
+              ref={rightSentinelRef}
+              className="sticky top-0 bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+          </tr>
+          {/* Row 2: day headers */}
+          <tr>
+            <th
+              className="bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+            <th
+              className="sticky left-0 z-30 bg-white border-b border-r border-gray-200 px-3 py-2 text-left text-xs text-gray-500 font-medium min-w-[160px]"
+              style={{ top: 24 }}
+            >
               Квартира
             </th>
             {days.map(day => {
               const today = isToday(day)
+              const weekend = isDayWeekend(day)
               return (
                 <th
                   key={day.toISOString()}
-                  className={`border-b border-gray-200 px-1 py-1 text-center min-w-[36px] ${today ? 'bg-[#376E6F]/10' : 'bg-white'}`}
+                  data-today={today ? 'true' : undefined}
+                  className={`z-10 border-b border-gray-200 px-1 py-1 text-center min-w-[36px] ${
+                    today ? 'bg-[#376E6F]/10' : weekend ? 'bg-gray-100' : 'bg-white'
+                  }`}
+                  style={{ position: 'sticky', top: 24 }}
                 >
-                  <div className={`text-xs font-medium ${today ? 'text-[#376E6F]' : 'text-gray-400'}`}>
+                  <div className={`text-xs font-medium ${today ? 'text-[#376E6F]' : weekend ? 'text-gray-500' : 'text-gray-400'}`}>
                     {format(day, 'EEE', { locale: ru }).slice(0, 2)}
                   </div>
-                  <div className={`text-sm font-bold ${today ? 'text-[#376E6F]' : 'text-gray-700'}`}>
+                  <div className={`text-sm ${today ? 'font-bold text-[#376E6F]' : weekend ? 'font-semibold text-gray-600' : 'font-bold text-gray-700'}`}>
                     {format(day, 'd')}
                   </div>
                 </th>
               )
             })}
             <th
-              ref={rightSentinelRef}
+              className="bg-white"
               style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
               aria-hidden="true"
             />
@@ -134,15 +187,15 @@ export function ChessGrid({
         <tbody>
           {properties.map(property => {
             const propBookings = bookingMap.get(property.id) ?? new Map<string, Booking>()
-            const rgb = hexToRgb(property.color)
 
             return (
               <tr key={property.id} className="group">
-                <td className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-3 py-2">
+                <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
+                <td className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-3 py-2">
                   <div className="flex items-center gap-2">
                     <div
                       className="w-3 h-3 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: property.color }}
+                      style={{ backgroundColor: getPropertyColor(property) }}
                     />
                     <span className="text-sm font-medium text-gray-800 truncate max-w-[120px]">
                       {property.name}
@@ -153,10 +206,13 @@ export function ChessGrid({
                   const dateStr = format(day, 'yyyy-MM-dd')
                   const booking = propBookings.get(dateStr)
                   const today = isToday(day)
+                  const weekend = isDayWeekend(day)
 
                   if (booking) {
                     const isStart = isSameDay(parseISO(booking.check_in), day)
                     const isEnd = isSameDay(parseISO(booking.check_out), day)
+                    const cardColor = booking.color ?? getPropertyColor(property)
+                    const cardRgb = hexToRgb(cardColor)
 
                     let textOverlay: React.ReactNode = null
                     if (isStart) {
@@ -175,7 +231,7 @@ export function ChessGrid({
                         >
                           <span
                             className={showFullText ? 'text-xs font-medium leading-tight whitespace-normal break-words' : 'text-xs font-medium leading-tight truncate'}
-                            style={{ color: property.color }}
+                            style={{ color: cardColor }}
                           >
                             {booking.guest_name}
                           </span>
@@ -191,7 +247,9 @@ export function ChessGrid({
                     return (
                       <td
                         key={dateStr}
-                        className={`border-b border-gray-100 ${rowHeightClass} p-0 cursor-pointer relative overflow-visible ${today ? 'border-l-2 border-l-[#376E6F]' : ''}`}
+                        className={`border-b border-gray-100 ${rowHeightClass} p-0 cursor-pointer relative overflow-visible ${
+                          today ? 'border-l-2 border-l-[#376E6F]' : ''
+                        } ${weekend && !today ? 'bg-gray-50' : ''}`}
                         onClick={() => onBookingClick(booking)}
                       >
                         <div
@@ -199,8 +257,8 @@ export function ChessGrid({
                           style={{
                             left: isStart ? '2px' : '0',
                             right: isEnd ? '2px' : '0',
-                            backgroundColor: `rgba(${rgb.r},${rgb.g},${rgb.b},0.15)`,
-                            borderLeft: isStart ? `3px solid ${property.color}` : 'none',
+                            backgroundColor: `rgba(${cardRgb.r},${cardRgb.g},${cardRgb.b},0.25)`,
+                            borderLeft: isStart ? `3px solid ${cardColor}` : 'none',
                             borderRadius: isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : '0',
                           }}
                         />
@@ -212,11 +270,18 @@ export function ChessGrid({
                   return (
                     <td
                       key={dateStr}
-                      className={`border border-gray-200 ${rowHeightClass} cursor-pointer hover:bg-[#376E6F]/10 transition-colors ${today ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5' : ''}`}
+                      className={`border border-gray-200 ${rowHeightClass} cursor-pointer hover:bg-[#376E6F]/10 transition-colors ${
+                        today
+                          ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5'
+                          : weekend
+                          ? 'bg-gray-50'
+                          : ''
+                      }`}
                       onClick={() => onCellClick(dateStr, property.id)}
                     />
                   )
                 })}
+                <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
               </tr>
             )
           })}
