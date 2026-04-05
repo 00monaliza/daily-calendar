@@ -4,6 +4,7 @@ import { ru } from 'date-fns/locale'
 import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
 import { useSettings } from '@/entities/settings/queries'
+import { getPropertyColor } from '@/shared/lib/propertyColors'
 
 interface Props {
   properties: Property[]
@@ -24,6 +25,11 @@ function hexToRgb(hex: string) {
     : { r: 55, g: 110, b: 111 }
 }
 
+function isDayWeekend(day: Date) {
+  const d = day.getDay()
+  return d === 0 || d === 6
+}
+
 export function MobileChessGrid({
   properties,
   bookings,
@@ -42,9 +48,6 @@ export function MobileChessGrid({
   const leftSentinelRef = useRef<HTMLTableCellElement>(null)
   const rightSentinelRef = useRef<HTMLTableCellElement>(null)
 
-  // NOTE: onLoadPrev and onLoadNext must be stable references (useCallback with empty deps
-  // or module-level functions) — otherwise this observer disconnects and reconnects on every
-  // render, causing spurious load triggers when both sentinels are briefly visible.
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container || !leftSentinelRef.current || !rightSentinelRef.current) return
@@ -70,6 +73,17 @@ export function MobileChessGrid({
     start: parseISO(from),
     end: parseISO(to),
   })
+
+  const monthGroups = days.reduce<{ label: string; count: number }[]>((acc, day) => {
+    const label = format(day, 'LLLL yyyy', { locale: ru })
+    const last = acc[acc.length - 1]
+    if (last && last.label === label) {
+      last.count++
+    } else {
+      acc.push({ label, count: 1 })
+    }
+    return acc
+  }, [])
 
   const bookingMap = new Map<string, Map<string, Booking>>()
   for (const booking of bookings) {
@@ -100,37 +114,72 @@ export function MobileChessGrid({
     >
       <table className="border-collapse" style={{ minWidth: 'max-content' }}>
         <thead>
+          {/* Row 1: month labels */}
           <tr>
             <th
               ref={leftSentinelRef}
+              className="sticky top-0 bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+            {/* Empty corner cell aligned with property name column */}
+            <th
+              className="sticky left-0 top-0 z-30 bg-white border-b border-r border-gray-200"
+              style={{ minWidth: 100, height: 22 }}
+            />
+            {monthGroups.map(group => (
+              <th
+                key={group.label}
+                colSpan={group.count}
+                className="sticky top-0 z-10 bg-white border-b border-r border-gray-200 px-1 text-center text-[10px] text-gray-500 font-semibold capitalize"
+                style={{ height: 22, minWidth: 36 }}
+              >
+                {group.label}
+              </th>
+            ))}
+            <th
+              ref={rightSentinelRef}
+              className="sticky top-0 bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+          </tr>
+          {/* Row 2: day headers */}
+          <tr>
+            <th
+              className="bg-white"
               style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
               aria-hidden="true"
             />
             <th
-              className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-2 py-2 text-left text-xs text-gray-500 font-medium"
-              style={{ minWidth: 100 }}
+              className="sticky left-0 z-30 bg-white border-b border-r border-gray-200 px-2 py-2 text-left text-xs text-gray-500 font-medium"
+              style={{ minWidth: 100, top: 22 }}
             >
               Квартира
             </th>
             {days.map(day => {
               const today = isToday(day)
+              const weekend = isDayWeekend(day)
               return (
                 <th
                   key={day.toISOString()}
-                  className={`border-b border-gray-200 px-0.5 py-1 text-center ${today ? 'bg-[#376E6F]/10' : 'bg-white'}`}
-                  style={{ minWidth: 36 }}
+                  data-today={today ? 'true' : undefined}
+                  className={`z-10 border-b border-gray-200 px-0.5 py-1 text-center ${
+                    today ? 'bg-[#376E6F]/10' : weekend ? 'bg-gray-100' : 'bg-white'
+                  }`}
+                  style={{ minWidth: 36, top: 22, position: 'sticky' }}
                 >
-                  <div className={`text-[10px] font-medium leading-tight ${today ? 'text-[#376E6F]' : 'text-gray-400'}`}>
+                  <div className={`text-[10px] font-medium leading-tight ${today ? 'text-[#376E6F]' : weekend ? 'text-gray-500' : 'text-gray-400'}`}>
                     {format(day, 'EEE', { locale: ru }).slice(0, 2)}
                   </div>
-                  <div className={`text-xs font-bold leading-tight ${today ? 'text-[#376E6F]' : 'text-gray-700'}`}>
+                  <div className={`text-xs leading-tight ${today ? 'font-bold text-[#376E6F]' : weekend ? 'font-semibold text-gray-600' : 'font-bold text-gray-700'}`}>
                     {format(day, 'd')}
                   </div>
                 </th>
               )
             })}
             <th
-              ref={rightSentinelRef}
+              className="bg-white"
               style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
               aria-hidden="true"
             />
@@ -139,18 +188,18 @@ export function MobileChessGrid({
         <tbody>
           {properties.map(property => {
             const propBookings = bookingMap.get(property.id) ?? new Map<string, Booking>()
-            const rgb = hexToRgb(property.color)
 
             return (
               <tr key={property.id}>
+                <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
                 <td
-                  className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-2 py-0"
+                  className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-2 py-0"
                   style={{ minWidth: 100 }}
                 >
                   <div className="flex items-center gap-1.5 py-1">
                     <div
                       className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: property.color }}
+                      style={{ backgroundColor: getPropertyColor(property) }}
                     />
                     <span className="text-xs font-medium text-gray-800 truncate" style={{ maxWidth: 76 }}>
                       {property.name}
@@ -161,15 +210,20 @@ export function MobileChessGrid({
                   const dateStr = format(day, 'yyyy-MM-dd')
                   const booking = propBookings.get(dateStr)
                   const today = isToday(day)
+                  const weekend = isDayWeekend(day)
 
                   if (booking) {
                     const isStart = isSameDay(parseISO(booking.check_in), day)
                     const isEnd = isSameDay(parseISO(booking.check_out), day)
+                    const cardColor = booking.color ?? getPropertyColor(property)
+                    const cardRgb = hexToRgb(cardColor)
 
                     return (
                       <td
                         key={dateStr}
-                        className={`border-b border-gray-100 p-0 cursor-pointer relative ${today ? 'border-l-2 border-l-[#376E6F]' : ''}`}
+                        className={`border-b border-gray-100 p-0 cursor-pointer relative ${
+                          today ? 'border-l-2 border-l-[#376E6F]' : ''
+                        } ${weekend && !today ? 'bg-gray-50' : ''}`}
                         style={{ height: rowHeight }}
                         onClick={() => onBookingClick(booking)}
                       >
@@ -178,15 +232,15 @@ export function MobileChessGrid({
                           style={{
                             left: isStart ? '2px' : '0',
                             right: isEnd ? '2px' : '0',
-                            backgroundColor: `rgba(${rgb.r},${rgb.g},${rgb.b},0.15)`,
-                            borderLeft: isStart ? `3px solid ${property.color}` : 'none',
+                            backgroundColor: `rgba(${cardRgb.r},${cardRgb.g},${cardRgb.b},0.25)`,
+                            borderLeft: isStart ? `3px solid ${cardColor}` : 'none',
                             borderRadius: isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : '0',
                           }}
                         >
                           {isStart && (
                             <span
                               className={showFullText ? 'text-[10px] font-medium px-1 whitespace-normal break-words leading-tight' : 'text-[10px] font-medium px-1 truncate'}
-                              style={{ color: property.color }}
+                              style={{ color: cardColor }}
                             >
                               {showFullText && booking.comment
                                 ? `${booking.guest_name} — ${booking.comment}`
@@ -201,12 +255,19 @@ export function MobileChessGrid({
                   return (
                     <td
                       key={dateStr}
-                      className={`border border-gray-200 cursor-pointer active:bg-[#376E6F]/20 transition-colors ${today ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5' : ''}`}
+                      className={`border border-gray-200 cursor-pointer active:bg-[#376E6F]/20 transition-colors ${
+                        today
+                          ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5'
+                          : weekend
+                          ? 'bg-gray-50'
+                          : ''
+                      }`}
                       style={{ height: rowHeight }}
                       onClick={() => onCellClick(dateStr, property.id)}
                     />
                   )
                 })}
+                <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
               </tr>
             )
           })}
