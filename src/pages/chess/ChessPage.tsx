@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   format,
   startOfMonth,
@@ -44,6 +45,7 @@ export function ChessPage() {
   const prevFromRef = useRef(from)
   const isTeleportRef = useRef(false)
   const teleportTargetRef = useRef<string | null>(null)
+  const isInitializedRef = useRef(false)
 
   const extendPrev = useCallback(() => {
     if (isLoadingMoreRef.current) return
@@ -71,21 +73,24 @@ export function ChessPage() {
     setTo(newTo)
   }
 
-  function resetToCurrentMonth() {
+  function scrollToToday() {
     const now = new Date()
-    setMonthInputValue(format(now, 'yyyy-MM'))
-    isTeleportRef.current = true
-    teleportTargetRef.current = format(startOfMonth(now), 'yyyy-MM-dd')
-    const w = initialWindow()
-    setFrom(w.from)
-    setTo(w.to)
+    const todayStr = format(now, 'yyyy-MM-dd')
+    const container = scrollContainerRef.current
+
+    if (todayStr >= from && todayStr <= to && container) {
+      const todayOffset = differenceInCalendarDays(parseISO(todayStr), parseISO(from))
+      container.scrollLeft = Math.max(0, todayOffset * COL_WIDTH)
+    } else {
+      isTeleportRef.current = true
+      teleportTargetRef.current = todayStr
+      const w = initialWindow()
+      setFrom(w.from)
+      setTo(w.to)
+    }
   }
 
-  // NOTE: This effect MUST appear before the teleport-scroll effect in the component body.
-  // React runs effects in declaration order within a commit. The teleport-scroll effect
-  // reads isTeleportRef.current (set to false by it), but this effect reads it while still
-  // true (skipping the compensation). Swapping the order would cause both to fire on teleport.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const container = scrollContainerRef.current
     if (isTeleportRef.current || !container) {
       prevFromRef.current = from
@@ -103,7 +108,8 @@ export function ChessPage() {
     const container = scrollContainerRef.current
     if (!target || !container) return
     const dayOffset = differenceInCalendarDays(parseISO(target), parseISO(from))
-    container.scrollLeft = Math.max(0, dayOffset * COL_WIDTH)
+    const halfVisible = Math.floor((container.clientWidth - 160) / 2)
+    container.scrollLeft = Math.max(0, dayOffset * COL_WIDTH - halfVisible)
     teleportTargetRef.current = null
     isTeleportRef.current = false
   }, [from, to])
@@ -113,8 +119,23 @@ export function ChessPage() {
   const [prefillDate, setPrefillDate] = useState<string | null>(null)
   const [prefillPropertyId, setPrefillPropertyId] = useState<string | null>(null)
 
+  const navigate = useNavigate()
+
   const { data: properties = [] } = useProperties(user?.id)
-  const { data: bookings = [], isLoading } = useBookings(user?.id, from, to)
+  const { data: bookings = [], isLoading, isSuccess, refetch, isRefetching } = useBookings(user?.id, from, to)
+
+  // Scroll to today after first successful data load
+  useEffect(() => {
+    if (!isSuccess || isInitializedRef.current) return
+    const container = scrollContainerRef.current
+    if (!container) return
+    isInitializedRef.current = true
+    if (!isTeleportRef.current) {
+      const todayOffset = differenceInCalendarDays(new Date(), parseISO(from))
+      const halfVisible = Math.floor((container.clientWidth - 160) / 2)
+      container.scrollLeft = Math.max(0, todayOffset * COL_WIDTH - halfVisible)
+    }
+  }, [isSuccess]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     isLoadingMoreRef.current = false
@@ -169,11 +190,38 @@ export function ChessPage() {
           onChange={e => teleportToMonth(e.target.value)}
           className="flex-1 min-w-0 text-sm text-gray-800 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#376E6F]/30 focus:border-[#376E6F]"
         />
+      </div>
+
+      {/* Toolbar: Сегодня + refresh слева, Добавить квартиру справа */}
+      <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={scrollToToday}
+            className="text-xs font-medium text-[#376E6F] border border-[#376E6F]/40 rounded-lg px-2.5 py-1 hover:bg-[#376E6F]/10 transition-colors"
+          >
+            Сегодня
+          </button>
+          <button
+            onClick={() => refetch()}
+            disabled={isRefetching || isLoading}
+            title="Обновить"
+            className="text-[#376E6F] border border-[#376E6F]/40 rounded-lg p-1 hover:bg-[#376E6F]/10 transition-colors disabled:opacity-50"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className={`w-4 h-4 ${isRefetching ? 'animate-spin' : ''}`}
+            >
+              <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
         <button
-          onClick={resetToCurrentMonth}
-          className="text-xs text-[#376E6F] hover:underline flex-shrink-0 py-1.5 px-1"
+          onClick={() => navigate('/properties')}
+          className="text-xs font-medium text-[#376E6F] border border-[#376E6F]/40 rounded-lg px-2.5 py-1 hover:bg-[#376E6F]/10 transition-colors"
         >
-          Сегодня
+          + Добавить квартиру
         </button>
       </div>
 

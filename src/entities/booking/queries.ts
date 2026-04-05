@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { bookingApi } from './api'
 import type { BookingInsert, BookingUpdate } from './types'
 
@@ -13,6 +13,7 @@ export function useBookings(ownerId: string | undefined, from: string, to: strin
     },
     enabled: !!ownerId,
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   })
 }
 

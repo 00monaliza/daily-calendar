@@ -3,6 +3,8 @@ import { differenceInDays, format, addDays } from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
 import { useCreateBooking, useUpdateBooking, useDeleteBooking } from '@/entities/booking/queries'
 import type { Booking, PaymentStatus, BookingSource } from '@/entities/booking/types'
+
+const BOOKING_COLORS = ['#5e81ea', '#F5A623', '#E05C5C', '#7EC8E3', '#C3A6E8', '#7BC67E']
 import type { Property } from '@/entities/property/types'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { BottomSheet } from '@/widgets/bottom-sheet/BottomSheet'
@@ -38,7 +40,9 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
 
   const [propertyId, setPropertyId] = useState(booking?.property_id ?? defaultProperty)
   const [checkIn, setCheckIn] = useState(booking?.check_in ?? defaultCheckIn)
+  const [checkInTime, setCheckInTime] = useState(booking?.check_in_time ?? '14:00')
   const [checkOut, setCheckOut] = useState(booking?.check_out ?? defaultCheckOut)
+  const [checkOutTime, setCheckOutTime] = useState(booking?.check_out_time ?? '12:00')
   const [guestName, setGuestName] = useState(booking?.guest_name ?? '')
   const [guestPhone, setGuestPhone] = useState(booking?.guest_phone ?? '')
   const [totalPrice, setTotalPrice] = useState(booking?.total_price ?? 0)
@@ -46,6 +50,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(booking?.payment_status ?? 'waiting')
   const [source, setSource] = useState<BookingSource>(booking?.source ?? 'direct')
   const [comment, setComment] = useState(booking?.comment ?? '')
+  const [bookingColor, setBookingColor] = useState(booking?.color ?? BOOKING_COLORS[0])
 
   const selectedProperty = properties.find(p => p.id === propertyId)
   const nights = differenceInDays(new Date(checkOut), new Date(checkIn))
@@ -67,11 +72,14 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
       guest_phone: guestPhone || null,
       check_in: checkIn,
       check_out: checkOut,
+      check_in_time: checkInTime || null,
+      check_out_time: checkOutTime || null,
       total_price: totalPrice,
       prepayment,
       payment_status: paymentStatus,
       source,
       comment: comment || null,
+      color: bookingColor,
     }
 
     if (booking) {
@@ -109,24 +117,40 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Заезд *</label>
-          <input
-            type="date"
-            required
-            value={checkIn}
-            onChange={e => setCheckIn(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-          />
+          <div className="flex gap-1.5">
+            <input
+              type="date"
+              required
+              value={checkIn}
+              onChange={e => setCheckIn(e.target.value)}
+              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+            />
+            <input
+              type="time"
+              value={checkInTime}
+              onChange={e => setCheckInTime(e.target.value)}
+              className="w-20 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+            />
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Выезд *</label>
-          <input
-            type="date"
-            required
-            value={checkOut}
-            min={checkIn}
-            onChange={e => setCheckOut(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
-          />
+          <div className="flex gap-1.5">
+            <input
+              type="date"
+              required
+              value={checkOut}
+              min={checkIn}
+              onChange={e => setCheckOut(e.target.value)}
+              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+            />
+            <input
+              type="time"
+              value={checkOutTime}
+              onChange={e => setCheckOutTime(e.target.value)}
+              className="w-20 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+            />
+          </div>
         </div>
       </div>
 
@@ -218,6 +242,22 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F] resize-none"
           placeholder="Дополнительная информация..."
         />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Цвет брони</label>
+        <div className="flex gap-2.5">
+          {BOOKING_COLORS.map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setBookingColor(c)}
+              className={`w-8 h-8 rounded-full transition-transform hover:scale-110 ${bookingColor === c ? 'ring-2 ring-offset-2 ring-gray-500 scale-110' : ''}`}
+              style={{ backgroundColor: c }}
+              aria-label={c}
+            />
+          ))}
+        </div>
       </div>
 
       <div className="flex gap-3 pt-2">
