@@ -13,7 +13,6 @@ export const PROPERTY_COLOR_PALETTE = [
 
 export const DB_DEFAULT_PROPERTY_COLOR = PROPERTY_COLOR_PALETTE[0]
 
-/** djb2 hash of a string → integer */
 function hashString(str: string): number {
   let hash = 5381
   for (let i = 0; i < str.length; i++) {
