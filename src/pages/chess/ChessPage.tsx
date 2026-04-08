@@ -11,12 +11,13 @@ import {
   addDays,
 } from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
-import { useProperties } from '@/entities/property/queries'
+import { useProperties, useReorderProperties } from '@/entities/property/queries'
 import { useBookings } from '@/entities/booking/queries'
 import { SummaryBar } from '@/widgets/summary-bar/SummaryBar'
 import { ChessGrid } from '@/widgets/chess-grid/ChessGrid'
 import { BookingModal } from '@/widgets/booking-modal/BookingModal'
 import type { Booking } from '@/entities/booking/types'
+import type { Property } from '@/entities/property/types'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { MobileChessGrid } from '@/widgets/chess-grid/MobileChessGrid'
 
@@ -121,8 +122,37 @@ export function ChessPage() {
 
   const navigate = useNavigate()
 
-  const { data: properties = [] } = useProperties(user?.id)
+  const { data: propertiesData } = useProperties(user?.id)
+  const { mutate: reorderProperties } = useReorderProperties()
+  const [orderedProperties, setOrderedProperties] = useState<Property[]>([])
+  const properties = propertiesData ?? []
   const { data: bookings = [], isLoading, isSuccess, refetch, isRefetching } = useBookings(user?.id, from, to)
+
+  useEffect(() => {
+    // Avoid a render loop when query data is undefined (e.g. request error).
+    if (!propertiesData) return
+
+    if (propertiesData.length === 0) {
+      setOrderedProperties(prev => (prev.length === 0 ? prev : []))
+      return
+    }
+
+    setOrderedProperties(prev => {
+      if (prev.length === 0) return propertiesData
+
+      const existingIds = new Set(propertiesData.map(p => p.id))
+      const previousIds = new Set(prev.map(p => p.id))
+      const propertyMap = new Map(propertiesData.map(p => [p.id, p]))
+
+      const updatedExisting = prev
+        .filter(p => existingIds.has(p.id))
+        .map(p => propertyMap.get(p.id)!)
+
+      const newOnes = propertiesData.filter(p => !previousIds.has(p.id))
+
+      return [...updatedExisting, ...newOnes]
+    })
+  }, [propertiesData])
 
   // Scroll to today after first successful data load
   useEffect(() => {
@@ -175,6 +205,24 @@ export function ChessPage() {
     setPrefillPropertyId(null)
     setModalOpen(true)
   }
+
+  function handleReorder(ids: string[]) {
+    const idOrder = new Map(ids.map((id, index) => [id, index]))
+
+    setOrderedProperties(prev => {
+      const source = prev.length > 0 ? prev : properties
+      return [...source].sort(
+        (a, b) =>
+          (idOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+          (idOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+      )
+    })
+
+    reorderProperties(ids)
+  }
+
+  const displayedProperties =
+    orderedProperties.length > 0 ? orderedProperties : properties
 
   return (
     <div className="flex flex-col h-full">
@@ -231,7 +279,7 @@ export function ChessPage() {
         </div>
       ) : isMobile ? (
         <MobileChessGrid
-          properties={properties}
+          properties={displayedProperties}
           bookings={bookings}
           from={from}
           to={to}
@@ -240,10 +288,11 @@ export function ChessPage() {
           onLoadPrev={extendPrev}
           onLoadNext={extendNext}
           scrollContainerRef={scrollContainerRef}
+          onReorder={handleReorder}
         />
       ) : (
         <ChessGrid
-          properties={properties}
+          properties={displayedProperties}
           bookings={bookings}
           from={from}
           to={to}
@@ -252,6 +301,7 @@ export function ChessPage() {
           onLoadPrev={extendPrev}
           onLoadNext={extendNext}
           scrollContainerRef={scrollContainerRef}
+          onReorder={handleReorder}
         />
       )}
 

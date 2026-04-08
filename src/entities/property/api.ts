@@ -3,11 +3,29 @@ import type { PropertyInsert, PropertyUpdate } from './types'
 
 export const propertyApi = {
   async getAll(ownerId: string) {
-    return supabase
+    const response = await supabase
       .from('properties')
       .select('*')
       .eq('owner_id', ownerId)
       .order('sort_order', { nullsFirst: false })
+      .order('created_at')
+
+    if (!response.error) return response
+
+    const errorCode = (response.error as { code?: string }).code
+    const message = response.error.message.toLowerCase()
+    const sortOrderMissing =
+      errorCode === '42703' ||
+      message.includes('sort_order') ||
+      message.includes('order')
+
+    if (!sortOrderMissing) return response
+
+    // Backward compatibility for environments where migration 004 is not applied yet.
+    return supabase
+      .from('properties')
+      .select('*')
+      .eq('owner_id', ownerId)
       .order('created_at')
   },
 

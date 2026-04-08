@@ -17,6 +17,5 @@
       - generic [ref=e16]: Пароль
       - textbox "Пароль" [ref=e17]:
         - /placeholder: ••••••••
-        - text: wrong_password_xyz
     - button "Войти" [ref=e18]
 ```

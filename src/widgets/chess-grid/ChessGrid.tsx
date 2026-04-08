@@ -311,8 +311,9 @@ export function ChessGrid({
 
   return (
     <div ref={scrollContainerRef} className="overflow-auto flex-1">
-      <table className="border-collapse" style={{ minWidth: 'max-content' }}>
-        <thead>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <table className="border-collapse" style={{ minWidth: 'max-content' }}>
+          <thead>
           {/* Row 1: month labels */}
           <tr>
             <th
@@ -383,8 +384,7 @@ export function ChessGrid({
               aria-hidden="true"
             />
           </tr>
-        </thead>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          </thead>
           <SortableContext items={properties.map(p => p.id)} strategy={verticalListSortingStrategy}>
             <tbody>
               {properties.map(property => (
@@ -402,8 +402,8 @@ export function ChessGrid({
               ))}
             </tbody>
           </SortableContext>
-        </DndContext>
-      </table>
+        </table>
+      </DndContext>
     </div>
   )
 }

@@ -313,8 +313,9 @@ export function MobileChessGrid({
       className="overflow-auto flex-1"
       style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
     >
-      <table className="border-collapse" style={{ minWidth: 'max-content' }}>
-        <thead>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <table className="border-collapse" style={{ minWidth: 'max-content' }}>
+          <thead>
           <tr>
             <th
               ref={leftSentinelRef}
@@ -382,8 +383,7 @@ export function MobileChessGrid({
               aria-hidden="true"
             />
           </tr>
-        </thead>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          </thead>
           <SortableContext items={properties.map(p => p.id)} strategy={verticalListSortingStrategy}>
             <tbody>
               {properties.map(property => (
@@ -401,8 +401,8 @@ export function MobileChessGrid({
               ))}
             </tbody>
           </SortableContext>
-        </DndContext>
-      </table>
+        </table>
+      </DndContext>
     </div>
   )
 }

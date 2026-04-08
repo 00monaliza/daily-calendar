@@ -6,8 +6,6 @@ const OWNER_ID = '5dd9e818-ecab-42d6-9da3-ab83501d2a2b' // твой user id из
 
 const NASUTKICALENDAR_API = 'https://api.nasutkicalendar.ru:21802'
 
-// Palette starts at orange — teal (#376E6F) is the DB default so storing it
-// for a new property would make getPropertyColor treat it as "no custom color".
 const PROPERTY_COLORS = [
   '#E67E22', '#8E44AD', '#2980B9', '#27AE60', '#E74C3C',
   '#16A085', '#D35400', '#2C3E50', '#F39C12', '#376E6F',
