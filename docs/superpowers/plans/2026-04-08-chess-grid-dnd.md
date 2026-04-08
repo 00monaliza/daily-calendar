@@ -1,0 +1,1178 @@
+# Chess Grid Drag-and-Drop Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Добавить drag-and-drop для вертикальной сортировки квартир в шахматке с сохранением порядка в Supabase.
+
+**Architecture:** Добавляем колонку `sort_order` в БД; в ChessGrid/MobileChessGrid оборачиваем `<tbody>` в `DndContext` + `SortableContext` из dnd-kit; каждая строка квартиры становится `SortableRow`-компонентом с grip-иконкой. ChessPage хранит упорядоченный список в state и делает optimistic update + сохранение в Supabase.
+
+**Tech Stack:** dnd-kit (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`), Supabase, React, TypeScript, TanStack Query
+
+---
+
+## File Map
+
+| Файл | Действие | Что меняется |
+|------|----------|--------------|
+| `supabase/migrations/004_property_sort_order.sql` | Create | Новая миграция: `sort_order` колонка |
+| `src/entities/property/types.ts` | Modify | Добавить `sort_order?: number \| null` |
+| `src/entities/property/api.ts` | Modify | Обновить `.order()` в `getAll`, добавить `reorder()` |
+| `src/entities/property/queries.ts` | Modify | Добавить `useReorderProperties()` хук |
+| `src/widgets/chess-grid/ChessGrid.tsx` | Modify | DndContext + SortableContext + SortableRow + grip |
+| `src/widgets/chess-grid/MobileChessGrid.tsx` | Modify | Те же изменения для мобильной версии |
+| `src/pages/chess/ChessPage.tsx` | Modify | `orderedProperties` state + `handleReorder` + передать `onReorder` |
+
+---
+
+## Task 1: Миграция БД — добавить sort_order
+
+**Files:**
+- Create: `supabase/migrations/004_property_sort_order.sql`
+
+- [ ] **Step 1: Создать файл миграции**
+
+```sql
+-- supabase/migrations/004_property_sort_order.sql
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS sort_order integer;
+```
+
+- [ ] **Step 2: Применить миграцию**
+
+Два варианта:
+- Через Supabase CLI: `supabase db push`
+- Вручную: открыть Supabase Dashboard → SQL Editor → выполнить SQL из файла выше
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/migrations/004_property_sort_order.sql
+git commit -m "feat: add sort_order column to properties table"
+```
+
+---
+
+## Task 2: Обновить типы и API
+
+**Files:**
+- Modify: `src/entities/property/types.ts`
+- Modify: `src/entities/property/api.ts`
+- Modify: `src/entities/property/queries.ts`
+
+- [ ] **Step 1: Добавить `sort_order` в тип Property**
+
+В `src/entities/property/types.ts` добавить поле после `is_active`:
+
+```ts
+export interface Property {
+  id: string
+  owner_id: string
+  name: string
+  address: string | null
+  rooms: number
+  base_price: number
+  description: string | null
+  color: string
+  is_active: boolean
+  sort_order: number | null
+  created_at: string
+}
+```
+
+- [ ] **Step 2: Обновить `getAll` и добавить `reorder` в API**
+
+Заменить содержимое `src/entities/property/api.ts`:
+
+```ts
+import { supabase } from '@/shared/api/supabaseClient'
+import type { PropertyInsert, PropertyUpdate } from './types'
+
+export const propertyApi = {
+  async getAll(ownerId: string) {
+    return supabase
+      .from('properties')
+      .select('*')
+      .eq('owner_id', ownerId)
+      .order('sort_order', { nullsFirst: false })
+      .order('created_at')
+  },
+
+  async create(data: PropertyInsert) {
+    return supabase.from('properties').insert(data).select().single()
+  },
+
+  async update(id: string, data: PropertyUpdate) {
+    return supabase.from('properties').update(data).eq('id', id).select().single()
+  },
+
+  async delete(id: string) {
+    return supabase.from('properties').delete().eq('id', id)
+  },
+
+  async reorder(ids: string[]) {
+    return Promise.all(
+      ids.map((id, index) =>
+        supabase.from('properties').update({ sort_order: index }).eq('id', id)
+      )
+    )
+  },
+}
+```
+
+- [ ] **Step 3: Добавить `useReorderProperties` в queries**
+
+В `src/entities/property/queries.ts` добавить в конец файла:
+
+```ts
+export function useReorderProperties() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) => propertyApi.reorder(ids),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['properties'] }),
+  })
+}
+```
+
+- [ ] **Step 4: Проверить TypeScript**
+
+```bash
+npm run build
+```
+
+Ожидается: сборка без ошибок (или только те же ошибки, что были до этого).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/entities/property/types.ts src/entities/property/api.ts src/entities/property/queries.ts
+git commit -m "feat: add sort_order support to property API and types"
+```
+
+---
+
+## Task 3: Установить dnd-kit
+
+**Files:** `package.json` (автоматически)
+
+- [ ] **Step 1: Установить пакеты**
+
+```bash
+npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+```
+
+- [ ] **Step 2: Проверить установку**
+
+```bash
+npm run build
+```
+
+Ожидается: сборка проходит, в `node_modules` есть `@dnd-kit/core`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add package.json package-lock.json
+git commit -m "feat: install dnd-kit for drag-and-drop"
+```
+
+---
+
+## Task 4: Добавить DnD в ChessGrid (desktop)
+
+**Files:**
+- Modify: `src/widgets/chess-grid/ChessGrid.tsx`
+
+Полная замена файла. Ключевые изменения:
+1. Добавить `onReorder` проп
+2. Извлечь строку в `SortablePropertyRow` компонент с grip-иконкой
+3. Обернуть `<tbody>` в `DndContext` + `SortableContext`
+
+- [ ] **Step 1: Заменить содержимое ChessGrid.tsx**
+
+```tsx
+import React, { useRef, useEffect } from 'react'
+import { format, eachDayOfInterval, parseISO, isToday, isSameDay, differenceInCalendarDays } from 'date-fns'
+import { ru } from 'date-fns/locale'
+import type { Property } from '@/entities/property/types'
+import type { Booking, BookingWithProperty } from '@/entities/booking/types'
+import { useSettings } from '@/entities/settings/queries'
+import { getPropertyColor } from '@/shared/lib/propertyColors'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+const COL_WIDTH = 36
+
+interface Props {
+  properties: Property[]
+  bookings: (Booking | BookingWithProperty)[]
+  from: string
+  to: string
+  onCellClick: (date: string, propertyId: string) => void
+  onBookingClick: (booking: Booking) => void
+  onLoadPrev: () => void
+  onLoadNext: () => void
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>
+  onReorder?: (ids: string[]) => void
+}
+
+function hexToRgb(hex: string) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  return result
+    ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) }
+    : { r: 55, g: 110, b: 111 }
+}
+
+function contrastTextColor(r: number, g: number, b: number): string {
+  const luminance = 0.2126 * (r / 255) ** 2.2 + 0.7152 * (g / 255) ** 2.2 + 0.0722 * (b / 255) ** 2.2
+  return luminance > 0.35 ? '#1a1a1a' : '#ffffff'
+}
+
+function isDayWeekend(day: Date) {
+  const d = day.getDay()
+  return d === 0 || d === 6
+}
+
+function GripIcon() {
+  return (
+    <svg
+      width="10"
+      height="14"
+      viewBox="0 0 10 14"
+      fill="currentColor"
+      className="text-gray-300 hover:text-gray-500 transition-colors flex-shrink-0"
+    >
+      <circle cx="2" cy="2" r="1.5" />
+      <circle cx="8" cy="2" r="1.5" />
+      <circle cx="2" cy="7" r="1.5" />
+      <circle cx="8" cy="7" r="1.5" />
+      <circle cx="2" cy="12" r="1.5" />
+      <circle cx="8" cy="12" r="1.5" />
+    </svg>
+  )
+}
+
+interface SortableRowProps {
+  property: Property
+  days: Date[]
+  propBookings: Map<string, Booking>
+  rowHeightClass: string
+  showFullText: boolean
+  from: string
+  to: string
+  onCellClick: (date: string, propertyId: string) => void
+  onBookingClick: (booking: Booking) => void
+}
+
+function SortablePropertyRow({
+  property,
+  days,
+  propBookings,
+  rowHeightClass,
+  showFullText,
+  from,
+  to,
+  onCellClick,
+  onBookingClick,
+}: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: property.id })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 1 : 'auto',
+  }
+
+  return (
+    <tr ref={setNodeRef} style={style} className="group">
+      <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
+      <td className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span
+            {...attributes}
+            {...listeners}
+            className="flex-shrink-0"
+            style={{ cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+            title="Перетащить"
+          >
+            <GripIcon />
+          </span>
+          <div
+            className="w-3 h-3 rounded-full flex-shrink-0"
+            style={{ backgroundColor: getPropertyColor(property) }}
+          />
+          <span className="text-sm font-medium text-gray-800 truncate max-w-[120px]">
+            {property.name}
+          </span>
+        </div>
+      </td>
+      {days.map(day => {
+        const dateStr = format(day, 'yyyy-MM-dd')
+        const booking = propBookings.get(dateStr)
+        const today = isToday(day)
+        const weekend = isDayWeekend(day)
+
+        if (booking) {
+          const isStart = isSameDay(parseISO(booking.check_in), day)
+          const isEnd = isSameDay(parseISO(booking.check_out), day)
+          const cardColor = booking.color ?? getPropertyColor(property)
+          const cardRgb = hexToRgb(cardColor)
+
+          let textOverlay: React.ReactNode = null
+          if (isStart) {
+            const checkOut = parseISO(booking.check_out)
+            const rangeEnd = parseISO(to)
+            const effectiveEnd = checkOut <= rangeEnd ? checkOut : rangeEnd
+            const spanDays = Math.max(1, differenceInCalendarDays(effectiveEnd, day) + 1)
+            const textWidth = spanDays * COL_WIDTH - 6
+            const tooltipText = [booking.guest_name, booking.comment].filter(Boolean).join(' — ')
+
+            textOverlay = (
+              <div
+                className="absolute top-0.5 bottom-0.5 left-[5px] z-10 flex flex-col items-center justify-center px-1.5 py-0.5 pointer-events-none overflow-hidden"
+                style={{ width: `${textWidth}px` }}
+                title={tooltipText}
+              >
+                <span
+                  className={showFullText ? 'text-xs font-medium leading-tight whitespace-normal break-words w-full text-center' : 'text-xs font-medium leading-tight truncate w-full text-center'}
+                  style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b) }}
+                >
+                  {booking.guest_name}
+                </span>
+                {showFullText && booking.comment && (
+                  <span className="text-[10px] leading-tight whitespace-normal break-words mt-0.5 line-clamp-2 w-full text-center" style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b), opacity: 0.75 }}>
+                    {booking.comment}
+                  </span>
+                )}
+              </div>
+            )
+          }
+
+          return (
+            <td
+              key={dateStr}
+              className={`border-b border-gray-100 ${rowHeightClass} p-0 cursor-pointer relative overflow-visible ${
+                today ? 'border-l-2 border-l-[#376E6F]' : ''
+              } ${weekend && !today ? 'bg-gray-50' : ''}`}
+              onClick={() => onBookingClick(booking)}
+            >
+              <div
+                className="absolute inset-y-0.5"
+                style={{
+                  left: isStart ? '2px' : '0',
+                  right: isEnd ? '2px' : '0',
+                  backgroundColor: `rgba(${cardRgb.r},${cardRgb.g},${cardRgb.b},0.85)`,
+                  borderLeft: isStart ? `3px solid ${cardColor}` : 'none',
+                  borderRadius: isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : '0',
+                }}
+              />
+              {textOverlay}
+            </td>
+          )
+        }
+
+        return (
+          <td
+            key={dateStr}
+            className={`border border-gray-200 ${rowHeightClass} cursor-pointer hover:bg-[#376E6F]/10 transition-colors ${
+              today
+                ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5'
+                : weekend
+                ? 'bg-gray-50'
+                : ''
+            }`}
+            onClick={() => onCellClick(dateStr, property.id)}
+          />
+        )
+      })}
+      <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
+    </tr>
+  )
+}
+
+export function ChessGrid({
+  properties,
+  bookings,
+  from,
+  to,
+  onCellClick,
+  onBookingClick,
+  onLoadPrev,
+  onLoadNext,
+  scrollContainerRef,
+  onReorder,
+}: Props) {
+  const { data: settings } = useSettings()
+  const showFullText = settings?.show_full_text ?? true
+  const rowHeightClass = settings?.compact_mode ? 'h-7' : 'h-10'
+
+  const leftSentinelRef = useRef<HTMLTableCellElement>(null)
+  const rightSentinelRef = useRef<HTMLTableCellElement>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container || !leftSentinelRef.current || !rightSentinelRef.current) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          if (entry.target === leftSentinelRef.current) onLoadPrev()
+          if (entry.target === rightSentinelRef.current) onLoadNext()
+        }
+      },
+      { root: container, threshold: 0.1 }
+    )
+
+    observer.observe(leftSentinelRef.current)
+    observer.observe(rightSentinelRef.current)
+
+    return () => observer.disconnect()
+  }, [onLoadPrev, onLoadNext, scrollContainerRef])
+
+  const days = eachDayOfInterval({
+    start: parseISO(from),
+    end: parseISO(to),
+  })
+
+  const monthGroups = days.reduce<{ label: string; count: number }[]>((acc, day) => {
+    const label = format(day, 'LLLL yyyy', { locale: ru })
+    const last = acc[acc.length - 1]
+    if (last && last.label === label) {
+      last.count++
+    } else {
+      acc.push({ label, count: 1 })
+    }
+    return acc
+  }, [])
+
+  const bookingMap = new Map<string, Map<string, Booking>>()
+  for (const booking of bookings) {
+    if (!bookingMap.has(booking.property_id)) {
+      bookingMap.set(booking.property_id, new Map())
+    }
+    const propMap = bookingMap.get(booking.property_id)!
+    const checkIn = parseISO(booking.check_in)
+    const checkOut = parseISO(booking.check_out)
+    for (const day of eachDayOfInterval({ start: checkIn, end: checkOut })) {
+      const key = format(day, 'yyyy-MM-dd')
+      propMap.set(key, booking as Booking)
+    }
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id || !onReorder) return
+    const oldIndex = properties.findIndex(p => p.id === active.id)
+    const newIndex = properties.findIndex(p => p.id === over.id)
+    const reordered = arrayMove(properties, oldIndex, newIndex)
+    onReorder(reordered.map(p => p.id))
+  }
+
+  if (properties.length === 0) {
+    return (
+      <div className="flex items-center justify-center flex-1 text-gray-400 text-sm py-16">
+        Добавьте квартиры, чтобы увидеть шахматку
+      </div>
+    )
+  }
+
+  return (
+    <div ref={scrollContainerRef} className="overflow-auto flex-1">
+      <table className="border-collapse" style={{ minWidth: 'max-content' }}>
+        <thead>
+          <tr>
+            <th
+              ref={leftSentinelRef}
+              className="sticky top-0 bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+            <th
+              className="sticky left-0 top-0 z-30 bg-white border-b border-r border-gray-200 min-w-[160px]"
+              style={{ height: 24 }}
+            />
+            {monthGroups.map(group => (
+              <th
+                key={group.label}
+                colSpan={group.count}
+                className="sticky top-0 z-10 bg-white border-b border-r border-gray-200 px-2 text-center text-xs text-gray-500 font-semibold capitalize"
+                style={{ height: 24 }}
+              >
+                {group.label}
+              </th>
+            ))}
+            <th
+              ref={rightSentinelRef}
+              className="sticky top-0 bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+          </tr>
+          <tr>
+            <th
+              className="bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+            <th
+              className="sticky left-0 z-30 bg-white border-b border-r border-gray-200 px-3 py-2 text-left text-xs text-gray-500 font-medium min-w-[160px]"
+              style={{ top: 24 }}
+            >
+              Квартира
+            </th>
+            {days.map(day => {
+              const today = isToday(day)
+              const weekend = isDayWeekend(day)
+              return (
+                <th
+                  key={day.toISOString()}
+                  data-today={today ? 'true' : undefined}
+                  className={`z-10 border-b border-gray-200 px-1 py-1 text-center min-w-[36px] ${
+                    today ? 'bg-[#376E6F]/10' : weekend ? 'bg-gray-100' : 'bg-white'
+                  }`}
+                  style={{ position: 'sticky', top: 24 }}
+                >
+                  <div className={`text-xs font-medium ${today ? 'text-[#376E6F]' : weekend ? 'text-gray-500' : 'text-gray-400'}`}>
+                    {format(day, 'EEE', { locale: ru }).slice(0, 2)}
+                  </div>
+                  <div className={`text-sm ${today ? 'font-bold text-[#376E6F]' : weekend ? 'font-semibold text-gray-600' : 'font-bold text-gray-700'}`}>
+                    {format(day, 'd')}
+                  </div>
+                </th>
+              )
+            })}
+            <th
+              className="bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+          </tr>
+        </thead>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={properties.map(p => p.id)} strategy={verticalListSortingStrategy}>
+            <tbody>
+              {properties.map(property => (
+                <SortablePropertyRow
+                  key={property.id}
+                  property={property}
+                  days={days}
+                  propBookings={bookingMap.get(property.id) ?? new Map()}
+                  rowHeightClass={rowHeightClass}
+                  showFullText={showFullText}
+                  from={from}
+                  to={to}
+                  onCellClick={onCellClick}
+                  onBookingClick={onBookingClick}
+                />
+              ))}
+            </tbody>
+          </SortableContext>
+        </DndContext>
+      </table>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 2: Проверить TypeScript**
+
+```bash
+npm run build
+```
+
+Ожидается: сборка без ошибок.
+
+- [ ] **Step 3: Проверить в браузере**
+
+```bash
+npm run dev
+```
+
+Открыть шахматку, убедиться:
+- Рядом с именем каждой квартиры появилась иконка grip (6 точек)
+- Зажав grip и потянув — строка квартиры перемещается
+- Остальные строки анимированно раздвигаются
+- После отпускания порядок в UI обновился
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/widgets/chess-grid/ChessGrid.tsx
+git commit -m "feat: add drag-and-drop sorting to ChessGrid"
+```
+
+---
+
+## Task 5: Добавить DnD в MobileChessGrid
+
+**Files:**
+- Modify: `src/widgets/chess-grid/MobileChessGrid.tsx`
+
+- [ ] **Step 1: Заменить содержимое MobileChessGrid.tsx**
+
+```tsx
+import React, { useRef, useEffect } from 'react'
+import { format, eachDayOfInterval, parseISO, isToday, isSameDay, differenceInCalendarDays } from 'date-fns'
+import { ru } from 'date-fns/locale'
+import type { Property } from '@/entities/property/types'
+import type { Booking, BookingWithProperty } from '@/entities/booking/types'
+import { useSettings } from '@/entities/settings/queries'
+import { getPropertyColor } from '@/shared/lib/propertyColors'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+interface Props {
+  properties: Property[]
+  bookings: (Booking | BookingWithProperty)[]
+  from: string
+  to: string
+  onCellClick: (date: string, propertyId: string) => void
+  onBookingClick: (booking: Booking) => void
+  onLoadPrev: () => void
+  onLoadNext: () => void
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>
+  onReorder?: (ids: string[]) => void
+}
+
+function hexToRgb(hex: string) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  return result
+    ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) }
+    : { r: 55, g: 110, b: 111 }
+}
+
+function contrastTextColor(r: number, g: number, b: number): string {
+  const luminance = 0.2126 * (r / 255) ** 2.2 + 0.7152 * (g / 255) ** 2.2 + 0.0722 * (b / 255) ** 2.2
+  return luminance > 0.35 ? '#1a1a1a' : '#ffffff'
+}
+
+const MOBILE_COL_WIDTH = 36
+
+function isDayWeekend(day: Date) {
+  const d = day.getDay()
+  return d === 0 || d === 6
+}
+
+function GripIcon() {
+  return (
+    <svg
+      width="8"
+      height="12"
+      viewBox="0 0 10 14"
+      fill="currentColor"
+      className="text-gray-300 hover:text-gray-500 transition-colors flex-shrink-0"
+    >
+      <circle cx="2" cy="2" r="1.5" />
+      <circle cx="8" cy="2" r="1.5" />
+      <circle cx="2" cy="7" r="1.5" />
+      <circle cx="8" cy="7" r="1.5" />
+      <circle cx="2" cy="12" r="1.5" />
+      <circle cx="8" cy="12" r="1.5" />
+    </svg>
+  )
+}
+
+interface SortableMobileRowProps {
+  property: Property
+  days: Date[]
+  propBookings: Map<string, Booking>
+  rowHeight: number
+  showFullText: boolean
+  from: string
+  to: string
+  onCellClick: (date: string, propertyId: string) => void
+  onBookingClick: (booking: Booking) => void
+}
+
+function SortableMobileRow({
+  property,
+  days,
+  propBookings,
+  rowHeight,
+  showFullText,
+  from,
+  to,
+  onCellClick,
+  onBookingClick,
+}: SortableMobileRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: property.id })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 1 : 'auto',
+  }
+
+  return (
+    <tr ref={setNodeRef} style={style}>
+      <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
+      <td
+        className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-2 py-0"
+        style={{ minWidth: 100 }}
+      >
+        <div className="flex items-center gap-1.5 py-1">
+          <span
+            {...attributes}
+            {...listeners}
+            className="flex-shrink-0"
+            style={{ cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+            title="Перетащить"
+          >
+            <GripIcon />
+          </span>
+          <div
+            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+            style={{ backgroundColor: getPropertyColor(property) }}
+          />
+          <span className="text-xs font-medium text-gray-800 truncate" style={{ maxWidth: 66 }}>
+            {property.name}
+          </span>
+        </div>
+      </td>
+      {days.map(day => {
+        const dateStr = format(day, 'yyyy-MM-dd')
+        const booking = propBookings.get(dateStr)
+        const today = isToday(day)
+        const weekend = isDayWeekend(day)
+
+        if (booking) {
+          const isStart = isSameDay(parseISO(booking.check_in), day)
+          const isEnd = isSameDay(parseISO(booking.check_out), day)
+          const cardColor = booking.color ?? getPropertyColor(property)
+          const cardRgb = hexToRgb(cardColor)
+
+          let textOverlay: React.ReactNode = null
+          if (isStart) {
+            const checkOut = parseISO(booking.check_out)
+            const rangeEnd = parseISO(to)
+            const effectiveEnd = checkOut <= rangeEnd ? checkOut : rangeEnd
+            const spanDays = Math.max(1, differenceInCalendarDays(effectiveEnd, day) + 1)
+            const textWidth = spanDays * MOBILE_COL_WIDTH - 6
+
+            textOverlay = (
+              <div
+                className="absolute top-0.5 bottom-0.5 left-[5px] z-10 flex flex-col items-center justify-center pointer-events-none overflow-hidden"
+                style={{ width: `${textWidth}px` }}
+              >
+                <span
+                  className={showFullText ? 'text-[10px] font-medium whitespace-normal break-words leading-tight w-full text-center' : 'text-[10px] font-medium truncate w-full text-center'}
+                  style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b) }}
+                >
+                  {showFullText && booking.comment
+                    ? `${booking.guest_name} — ${booking.comment}`
+                    : booking.guest_name}
+                </span>
+              </div>
+            )
+          }
+
+          return (
+            <td
+              key={dateStr}
+              className={`border-b border-gray-100 p-0 cursor-pointer relative ${
+                today ? 'border-l-2 border-l-[#376E6F]' : ''
+              } ${weekend && !today ? 'bg-gray-50' : ''}`}
+              style={{ height: rowHeight }}
+              onClick={() => onBookingClick(booking)}
+            >
+              <div
+                className="absolute inset-y-0.5"
+                style={{
+                  left: isStart ? '2px' : '0',
+                  right: isEnd ? '2px' : '0',
+                  backgroundColor: `rgba(${cardRgb.r},${cardRgb.g},${cardRgb.b},0.85)`,
+                  borderLeft: isStart ? `3px solid ${cardColor}` : 'none',
+                  borderRadius: isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : '0',
+                }}
+              />
+              {textOverlay}
+            </td>
+          )
+        }
+
+        return (
+          <td
+            key={dateStr}
+            className={`border border-gray-200 cursor-pointer active:bg-[#376E6F]/20 transition-colors ${
+              today
+                ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5'
+                : weekend
+                ? 'bg-gray-50'
+                : ''
+            }`}
+            style={{ height: rowHeight }}
+            onClick={() => onCellClick(dateStr, property.id)}
+          />
+        )
+      })}
+      <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
+    </tr>
+  )
+}
+
+export function MobileChessGrid({
+  properties,
+  bookings,
+  from,
+  to,
+  onCellClick,
+  onBookingClick,
+  onLoadPrev,
+  onLoadNext,
+  scrollContainerRef,
+  onReorder,
+}: Props) {
+  const { data: settings } = useSettings()
+  const showFullText = settings?.show_full_text ?? true
+  const rowHeight = settings?.compact_mode ? 32 : 44
+
+  const leftSentinelRef = useRef<HTMLTableCellElement>(null)
+  const rightSentinelRef = useRef<HTMLTableCellElement>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container || !leftSentinelRef.current || !rightSentinelRef.current) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          if (entry.target === leftSentinelRef.current) onLoadPrev()
+          if (entry.target === rightSentinelRef.current) onLoadNext()
+        }
+      },
+      { root: container, threshold: 0.1 }
+    )
+
+    observer.observe(leftSentinelRef.current)
+    observer.observe(rightSentinelRef.current)
+
+    return () => observer.disconnect()
+  }, [onLoadPrev, onLoadNext, scrollContainerRef])
+
+  const days = eachDayOfInterval({
+    start: parseISO(from),
+    end: parseISO(to),
+  })
+
+  const monthGroups = days.reduce<{ label: string; count: number }[]>((acc, day) => {
+    const label = format(day, 'LLLL yyyy', { locale: ru })
+    const last = acc[acc.length - 1]
+    if (last && last.label === label) {
+      last.count++
+    } else {
+      acc.push({ label, count: 1 })
+    }
+    return acc
+  }, [])
+
+  const bookingMap = new Map<string, Map<string, Booking>>()
+  for (const booking of bookings) {
+    if (!bookingMap.has(booking.property_id)) {
+      bookingMap.set(booking.property_id, new Map())
+    }
+    const propMap = bookingMap.get(booking.property_id)!
+    const checkIn = parseISO(booking.check_in)
+    const checkOut = parseISO(booking.check_out)
+    for (const day of eachDayOfInterval({ start: checkIn, end: checkOut })) {
+      propMap.set(format(day, 'yyyy-MM-dd'), booking as Booking)
+    }
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id || !onReorder) return
+    const oldIndex = properties.findIndex(p => p.id === active.id)
+    const newIndex = properties.findIndex(p => p.id === over.id)
+    const reordered = arrayMove(properties, oldIndex, newIndex)
+    onReorder(reordered.map(p => p.id))
+  }
+
+  if (properties.length === 0) {
+    return (
+      <div className="flex items-center justify-center flex-1 text-gray-400 text-sm py-16 px-4 text-center">
+        Добавьте квартиры, чтобы увидеть шахматку
+      </div>
+    )
+  }
+
+  return (
+    <div
+      ref={scrollContainerRef}
+      className="overflow-auto flex-1"
+      style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+    >
+      <table className="border-collapse" style={{ minWidth: 'max-content' }}>
+        <thead>
+          <tr>
+            <th
+              ref={leftSentinelRef}
+              className="sticky top-0 bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+            <th
+              className="sticky left-0 top-0 z-30 bg-white border-b border-r border-gray-200"
+              style={{ minWidth: 100, height: 22 }}
+            />
+            {monthGroups.map(group => (
+              <th
+                key={group.label}
+                colSpan={group.count}
+                className="sticky top-0 z-10 bg-white border-b border-r border-gray-200 px-1 text-center text-[10px] text-gray-500 font-semibold capitalize"
+                style={{ height: 22, minWidth: 36 }}
+              >
+                {group.label}
+              </th>
+            ))}
+            <th
+              ref={rightSentinelRef}
+              className="sticky top-0 bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+          </tr>
+          <tr>
+            <th
+              className="bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+            <th
+              className="sticky left-0 z-30 bg-white border-b border-r border-gray-200 px-2 py-2 text-left text-xs text-gray-500 font-medium"
+              style={{ minWidth: 100, top: 22 }}
+            >
+              Квартира
+            </th>
+            {days.map(day => {
+              const today = isToday(day)
+              const weekend = isDayWeekend(day)
+              return (
+                <th
+                  key={day.toISOString()}
+                  data-today={today ? 'true' : undefined}
+                  className={`z-10 border-b border-gray-200 px-0.5 py-1 text-center ${
+                    today ? 'bg-[#376E6F]/10' : weekend ? 'bg-gray-100' : 'bg-white'
+                  }`}
+                  style={{ minWidth: 36, top: 22, position: 'sticky' }}
+                >
+                  <div className={`text-[10px] font-medium leading-tight ${today ? 'text-[#376E6F]' : weekend ? 'text-gray-500' : 'text-gray-400'}`}>
+                    {format(day, 'EEE', { locale: ru }).slice(0, 2)}
+                  </div>
+                  <div className={`text-xs leading-tight ${today ? 'font-bold text-[#376E6F]' : weekend ? 'font-semibold text-gray-600' : 'font-bold text-gray-700'}`}>
+                    {format(day, 'd')}
+                  </div>
+                </th>
+              )
+            })}
+            <th
+              className="bg-white"
+              style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
+              aria-hidden="true"
+            />
+          </tr>
+        </thead>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={properties.map(p => p.id)} strategy={verticalListSortingStrategy}>
+            <tbody>
+              {properties.map(property => (
+                <SortableMobileRow
+                  key={property.id}
+                  property={property}
+                  days={days}
+                  propBookings={bookingMap.get(property.id) ?? new Map()}
+                  rowHeight={rowHeight}
+                  showFullText={showFullText}
+                  from={from}
+                  to={to}
+                  onCellClick={onCellClick}
+                  onBookingClick={onBookingClick}
+                />
+              ))}
+            </tbody>
+          </SortableContext>
+        </DndContext>
+      </table>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 2: Проверить TypeScript**
+
+```bash
+npm run build
+```
+
+Ожидается: сборка без ошибок.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/widgets/chess-grid/MobileChessGrid.tsx
+git commit -m "feat: add drag-and-drop sorting to MobileChessGrid"
+```
+
+---
+
+## Task 6: Обновить ChessPage — state + optimistic update + API
+
+**Files:**
+- Modify: `src/pages/chess/ChessPage.tsx`
+
+- [ ] **Step 1: Добавить импорты и state**
+
+В начало файла добавить импорт:
+```ts
+import { useReorderProperties } from '@/entities/property/queries'
+```
+
+В теле `ChessPage`, после строки `const { data: properties = [] } = useProperties(user?.id)`:
+
+```ts
+const { mutate: reorderProperties } = useReorderProperties()
+
+const [orderedProperties, setOrderedProperties] = useState<typeof properties>([])
+
+// Синхронизировать orderedProperties: сохраняем ручной порядок,
+// но добавляем новые квартиры в конец и удаляем удалённые
+useEffect(() => {
+  if (properties.length === 0) return
+  setOrderedProperties(prev => {
+    if (prev.length === 0) return properties
+    const existingIds = new Set(properties.map(p => p.id))
+    const prevIds = new Set(prev.map(p => p.id))
+    const propMap = new Map(properties.map(p => [p.id, p]))
+    // Удалить удалённые, обновить данные (имя, цвет и т.д.)
+    const updated = prev.filter(p => existingIds.has(p.id)).map(p => propMap.get(p.id)!)
+    // Добавить новые в конец
+    const newOnes = properties.filter(p => !prevIds.has(p.id))
+    return [...updated, ...newOnes]
+  })
+}, [properties]) // eslint-disable-line react-hooks/exhaustive-deps
+```
+
+- [ ] **Step 2: Добавить handleReorder**
+
+После функции `handleBookingClick` добавить:
+
+```ts
+function handleReorder(ids: string[]) {
+  const idOrder = new Map(ids.map((id, i) => [id, i]))
+  setOrderedProperties(prev => [...prev].sort((a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0)))
+  reorderProperties(ids)
+}
+```
+
+- [ ] **Step 3: Передать orderedProperties и onReorder в гриды**
+
+Найти оба места где рендерится `<MobileChessGrid>` и `<ChessGrid>`, заменить `properties={properties}` на `properties={orderedProperties.length > 0 ? orderedProperties : properties}` и добавить `onReorder={handleReorder}`:
+
+```tsx
+<MobileChessGrid
+  properties={orderedProperties.length > 0 ? orderedProperties : properties}
+  bookings={bookings}
+  from={from}
+  to={to}
+  onCellClick={handleCellClick}
+  onBookingClick={handleBookingClick}
+  onLoadPrev={extendPrev}
+  onLoadNext={extendNext}
+  scrollContainerRef={scrollContainerRef}
+  onReorder={handleReorder}
+/>
+```
+
+```tsx
+<ChessGrid
+  properties={orderedProperties.length > 0 ? orderedProperties : properties}
+  bookings={bookings}
+  from={from}
+  to={to}
+  onCellClick={handleCellClick}
+  onBookingClick={handleBookingClick}
+  onLoadPrev={extendPrev}
+  onLoadNext={extendNext}
+  scrollContainerRef={scrollContainerRef}
+  onReorder={handleReorder}
+/>
+```
+
+- [ ] **Step 4: Проверить TypeScript**
+
+```bash
+npm run build
+```
+
+Ожидается: сборка без ошибок.
+
+- [ ] **Step 5: Финальная проверка в браузере**
+
+```bash
+npm run dev
+```
+
+Проверить:
+1. Иконки grip видны рядом с именем каждой квартиры
+2. Зажать grip мышью → потянуть вверх/вниз → строка перемещается
+3. Отпустить → порядок обновился в UI
+4. Обновить страницу → порядок сохранился (пришёл из Supabase с новым `sort_order`)
+5. На мобильном/touch: зажать grip пальцем → перетащить → работает
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/pages/chess/ChessPage.tsx
+git commit -m "feat: wire up property reordering in ChessPage with optimistic update"
+```
