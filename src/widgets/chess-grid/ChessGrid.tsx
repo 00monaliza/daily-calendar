@@ -5,6 +5,21 @@ import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
 import { useSettings } from '@/entities/settings/queries'
 import { getPropertyColor } from '@/shared/lib/propertyColors'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 const COL_WIDTH = 36
 
@@ -18,6 +33,7 @@ interface Props {
   onLoadPrev: () => void
   onLoadNext: () => void
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
+  onReorder?: (ids: string[]) => void
 }
 
 function hexToRgb(hex: string) {
@@ -27,9 +43,179 @@ function hexToRgb(hex: string) {
     : { r: 55, g: 110, b: 111 }
 }
 
+function contrastTextColor(r: number, g: number, b: number): string {
+  // sRGB relative luminance
+  const luminance = 0.2126 * (r / 255) ** 2.2 + 0.7152 * (g / 255) ** 2.2 + 0.0722 * (b / 255) ** 2.2
+  return luminance > 0.35 ? '#1a1a1a' : '#ffffff'
+}
+
 function isDayWeekend(day: Date) {
   const d = day.getDay()
   return d === 0 || d === 6
+}
+
+function GripIcon() {
+  return (
+    <svg
+      width="10"
+      height="14"
+      viewBox="0 0 10 14"
+      fill="currentColor"
+      className="text-gray-300 hover:text-gray-500 transition-colors flex-shrink-0"
+    >
+      <circle cx="2" cy="2" r="1.5" />
+      <circle cx="8" cy="2" r="1.5" />
+      <circle cx="2" cy="7" r="1.5" />
+      <circle cx="8" cy="7" r="1.5" />
+      <circle cx="2" cy="12" r="1.5" />
+      <circle cx="8" cy="12" r="1.5" />
+    </svg>
+  )
+}
+
+interface SortableRowProps {
+  property: Property
+  days: Date[]
+  propBookings: Map<string, Booking>
+  rowHeightClass: string
+  showFullText: boolean
+  to: string
+  onCellClick: (date: string, propertyId: string) => void
+  onBookingClick: (booking: Booking) => void
+}
+
+function SortablePropertyRow({
+  property,
+  days,
+  propBookings,
+  rowHeightClass,
+  showFullText,
+  to,
+  onCellClick,
+  onBookingClick,
+}: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: property.id })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 1 : 'auto',
+  }
+
+  return (
+    <tr ref={setNodeRef} style={style} className="group">
+      <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
+      <td className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span
+            {...attributes}
+            {...listeners}
+            className="flex-shrink-0"
+            style={{ cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+            title="Перетащить"
+          >
+            <GripIcon />
+          </span>
+          <div
+            className="w-3 h-3 rounded-full flex-shrink-0"
+            style={{ backgroundColor: getPropertyColor(property) }}
+          />
+          <span className="text-sm font-medium text-gray-800 truncate max-w-[120px]">
+            {property.name}
+          </span>
+        </div>
+      </td>
+      {days.map(day => {
+        const dateStr = format(day, 'yyyy-MM-dd')
+        const booking = propBookings.get(dateStr)
+        const today = isToday(day)
+        const weekend = isDayWeekend(day)
+
+        if (booking) {
+          const isStart = isSameDay(parseISO(booking.check_in), day)
+          const isEnd = isSameDay(parseISO(booking.check_out), day)
+          const cardColor = booking.color ?? getPropertyColor(property)
+          const cardRgb = hexToRgb(cardColor)
+
+          let textOverlay: React.ReactNode = null
+          if (isStart) {
+            const checkOut = parseISO(booking.check_out)
+            const rangeEnd = parseISO(to)
+            const effectiveEnd = checkOut <= rangeEnd ? checkOut : rangeEnd
+            const spanDays = Math.max(1, differenceInCalendarDays(effectiveEnd, day) + 1)
+            const textWidth = spanDays * COL_WIDTH - 6
+            const tooltipText = [booking.guest_name, booking.comment].filter(Boolean).join(' — ')
+
+            textOverlay = (
+              <div
+                className="absolute top-0.5 bottom-0.5 left-[5px] z-10 flex flex-col items-center justify-center px-1.5 py-0.5 pointer-events-none overflow-hidden"
+                style={{ width: `${textWidth}px` }}
+                title={tooltipText}
+              >
+                <span
+                  className={showFullText ? 'text-xs font-medium leading-tight whitespace-normal break-words w-full text-center' : 'text-xs font-medium leading-tight truncate w-full text-center'}
+                  style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b) }}
+                >
+                  {booking.guest_name}
+                </span>
+                {showFullText && booking.comment && (
+                  <span className="text-[10px] leading-tight whitespace-normal break-words mt-0.5 line-clamp-2 w-full text-center" style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b), opacity: 0.75 }}>
+                    {booking.comment}
+                  </span>
+                )}
+              </div>
+            )
+          }
+
+          return (
+            <td
+              key={dateStr}
+              className={`border-b border-gray-100 ${rowHeightClass} p-0 cursor-pointer relative overflow-visible ${
+                today ? 'border-l-2 border-l-[#376E6F]' : ''
+              } ${weekend && !today ? 'bg-gray-50' : ''}`}
+              onClick={() => onBookingClick(booking)}
+            >
+              <div
+                className="absolute inset-y-0.5"
+                style={{
+                  left: isStart ? '2px' : '0',
+                  right: isEnd ? '2px' : '0',
+                  backgroundColor: `rgba(${cardRgb.r},${cardRgb.g},${cardRgb.b},0.85)`,
+                  borderLeft: isStart ? `3px solid ${cardColor}` : 'none',
+                  borderRadius: isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : '0',
+                }}
+              />
+              {textOverlay}
+            </td>
+          )
+        }
+
+        return (
+          <td
+            key={dateStr}
+            className={`border border-gray-200 ${rowHeightClass} cursor-pointer hover:bg-[#376E6F]/10 transition-colors ${
+              today
+                ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5'
+                : weekend
+                ? 'bg-gray-50'
+                : ''
+            }`}
+            onClick={() => onCellClick(dateStr, property.id)}
+          />
+        )
+      })}
+      <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
+    </tr>
+  )
 }
 
 export function ChessGrid({
@@ -42,6 +228,7 @@ export function ChessGrid({
   onLoadPrev,
   onLoadNext,
   scrollContainerRef,
+  onReorder,
 }: Props) {
   const { data: settings } = useSettings()
   const showFullText = settings?.show_full_text ?? true
@@ -50,8 +237,10 @@ export function ChessGrid({
   const leftSentinelRef = useRef<HTMLTableCellElement>(null)
   const rightSentinelRef = useRef<HTMLTableCellElement>(null)
 
-  // onLoadPrev and onLoadNext must be stable (useCallback with []) so this
-  // effect does not reconnect the observer on every render
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
+
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container || !leftSentinelRef.current || !rightSentinelRef.current) return
@@ -101,6 +290,15 @@ export function ChessGrid({
       const key = format(day, 'yyyy-MM-dd')
       propMap.set(key, booking as Booking)
     }
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id || !onReorder) return
+    const oldIndex = properties.findIndex(p => p.id === active.id)
+    const newIndex = properties.findIndex(p => p.id === over.id)
+    const reordered = arrayMove(properties, oldIndex, newIndex)
+    onReorder(reordered.map(p => p.id))
   }
 
   if (properties.length === 0) {
@@ -186,108 +384,25 @@ export function ChessGrid({
             />
           </tr>
         </thead>
-        <tbody>
-          {properties.map(property => {
-            const propBookings = bookingMap.get(property.id) ?? new Map<string, Booking>()
-
-            return (
-              <tr key={property.id} className="group">
-                <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
-                <td className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: getPropertyColor(property) }}
-                    />
-                    <span className="text-sm font-medium text-gray-800 truncate max-w-[120px]">
-                      {property.name}
-                    </span>
-                  </div>
-                </td>
-                {days.map(day => {
-                  const dateStr = format(day, 'yyyy-MM-dd')
-                  const booking = propBookings.get(dateStr)
-                  const today = isToday(day)
-                  const weekend = isDayWeekend(day)
-
-                  if (booking) {
-                    const isStart = isSameDay(parseISO(booking.check_in), day)
-                    const isEnd = isSameDay(parseISO(booking.check_out), day)
-                    const cardColor = booking.color ?? getPropertyColor(property)
-                    const cardRgb = hexToRgb(cardColor)
-
-                    let textOverlay: React.ReactNode = null
-                    if (isStart) {
-                      const checkOut = parseISO(booking.check_out)
-                      const rangeEnd = parseISO(to)
-                      const effectiveEnd = checkOut <= rangeEnd ? checkOut : rangeEnd
-                      const spanDays = Math.max(1, differenceInCalendarDays(effectiveEnd, day) + 1)
-                      const textWidth = spanDays * COL_WIDTH - 6
-                      const tooltipText = [booking.guest_name, booking.comment].filter(Boolean).join(' — ')
-
-                      textOverlay = (
-                        <div
-                          className="absolute top-0.5 bottom-0.5 left-[5px] z-10 flex flex-col justify-center px-1.5 py-0.5 pointer-events-none overflow-hidden"
-                          style={{ width: `${textWidth}px` }}
-                          title={tooltipText}
-                        >
-                          <span
-                            className={showFullText ? 'text-xs font-medium leading-tight whitespace-normal break-words' : 'text-xs font-medium leading-tight truncate'}
-                            style={{ color: cardColor }}
-                          >
-                            {booking.guest_name}
-                          </span>
-                          {showFullText && booking.comment && (
-                            <span className="text-[10px] text-gray-500 leading-tight whitespace-normal break-words mt-0.5 line-clamp-2">
-                              {booking.comment}
-                            </span>
-                          )}
-                        </div>
-                      )
-                    }
-
-                    return (
-                      <td
-                        key={dateStr}
-                        className={`border-b border-gray-100 ${rowHeightClass} p-0 cursor-pointer relative overflow-visible ${
-                          today ? 'border-l-2 border-l-[#376E6F]' : ''
-                        } ${weekend && !today ? 'bg-gray-50' : ''}`}
-                        onClick={() => onBookingClick(booking)}
-                      >
-                        <div
-                          className="absolute inset-y-0.5"
-                          style={{
-                            left: isStart ? '2px' : '0',
-                            right: isEnd ? '2px' : '0',
-                            backgroundColor: `rgba(${cardRgb.r},${cardRgb.g},${cardRgb.b},0.25)`,
-                            borderLeft: isStart ? `3px solid ${cardColor}` : 'none',
-                            borderRadius: isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : '0',
-                          }}
-                        />
-                        {textOverlay}
-                      </td>
-                    )
-                  }
-
-                  return (
-                    <td
-                      key={dateStr}
-                      className={`border border-gray-200 ${rowHeightClass} cursor-pointer hover:bg-[#376E6F]/10 transition-colors ${
-                        today
-                          ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5'
-                          : weekend
-                          ? 'bg-gray-50'
-                          : ''
-                      }`}
-                      onClick={() => onCellClick(dateStr, property.id)}
-                    />
-                  )
-                })}
-                <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
-              </tr>
-            )
-          })}
-        </tbody>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={properties.map(p => p.id)} strategy={verticalListSortingStrategy}>
+            <tbody>
+              {properties.map(property => (
+                <SortablePropertyRow
+                  key={property.id}
+                  property={property}
+                  days={days}
+                  propBookings={bookingMap.get(property.id) ?? new Map()}
+                  rowHeightClass={rowHeightClass}
+                  showFullText={showFullText}
+                  to={to}
+                  onCellClick={onCellClick}
+                  onBookingClick={onBookingClick}
+                />
+              ))}
+            </tbody>
+          </SortableContext>
+        </DndContext>
       </table>
     </div>
   )
