@@ -1,5 +1,14 @@
 import React, { useRef, useEffect } from 'react'
-import { format, eachDayOfInterval, parseISO, isToday, isSameDay, differenceInCalendarDays } from 'date-fns'
+import {
+  addDays,
+  differenceInCalendarDays,
+  eachDayOfInterval,
+  format,
+  isSameDay,
+  isToday,
+  parseISO,
+  subDays,
+} from 'date-fns'
 import { ru } from 'date-fns/locale'
 import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
@@ -51,6 +60,20 @@ const MOBILE_COL_WIDTH = 36
 function isDayWeekend(day: Date) {
   const d = day.getDay()
   return d === 0 || d === 6
+}
+
+function getBookingVisualEndDate(booking: Pick<Booking, 'check_in' | 'check_out'>): Date {
+  const checkIn = parseISO(booking.check_in)
+  const checkOut = parseISO(booking.check_out)
+
+  if (checkOut <= checkIn) return checkIn
+  return subDays(checkOut, 1)
+}
+
+function getVisibleSpanDays(startDay: Date, checkoutDay: Date, rangeEndInclusive: Date): number {
+  const rangeEndExclusive = addDays(rangeEndInclusive, 1)
+  const effectiveEndExclusive = checkoutDay < rangeEndExclusive ? checkoutDay : rangeEndExclusive
+  return Math.max(1, differenceInCalendarDays(effectiveEndExclusive, startDay))
 }
 
 function GripIcon() {
@@ -144,7 +167,7 @@ function SortableMobileRow({
 
         if (booking) {
           const isStart = isSameDay(parseISO(booking.check_in), day)
-          const isEnd = isSameDay(parseISO(booking.check_out), day)
+          const isEnd = isSameDay(getBookingVisualEndDate(booking), day)
           const cardColor = booking.color ?? getPropertyColor(property)
           const cardRgb = hexToRgb(cardColor)
 
@@ -152,9 +175,13 @@ function SortableMobileRow({
           if (isStart) {
             const checkOut = parseISO(booking.check_out)
             const rangeEnd = parseISO(to)
-            const effectiveEnd = checkOut <= rangeEnd ? checkOut : rangeEnd
-            const spanDays = Math.max(1, differenceInCalendarDays(effectiveEnd, day) + 1)
+            const spanDays = getVisibleSpanDays(day, checkOut, rangeEnd)
             const textWidth = spanDays * MOBILE_COL_WIDTH - 6
+            const isCompactLabel = spanDays <= 2 || textWidth < 84
+            const labelText =
+              showFullText && !isCompactLabel && booking.comment
+                ? `${booking.guest_name} — ${booking.comment}`
+                : booking.guest_name
 
             textOverlay = (
               <div
@@ -162,12 +189,16 @@ function SortableMobileRow({
                 style={{ width: `${textWidth}px` }}
               >
                 <span
-                  className={showFullText ? 'text-[10px] font-medium whitespace-normal break-words leading-tight w-full text-center' : 'text-[10px] font-medium truncate w-full text-center'}
+                  className={
+                    isCompactLabel
+                      ? 'text-[10px] font-semibold leading-tight truncate w-full text-center'
+                      : showFullText
+                        ? 'text-[10px] font-medium whitespace-normal break-words leading-tight w-full text-center'
+                        : 'text-[10px] font-medium truncate w-full text-center'
+                  }
                   style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b) }}
                 >
-                  {showFullText && booking.comment
-                    ? `${booking.guest_name} — ${booking.comment}`
-                    : booking.guest_name}
+                  {labelText}
                 </span>
               </div>
             )
@@ -284,8 +315,8 @@ export function MobileChessGrid({
     }
     const propMap = bookingMap.get(booking.property_id)!
     const checkIn = parseISO(booking.check_in)
-    const checkOut = parseISO(booking.check_out)
-    for (const day of eachDayOfInterval({ start: checkIn, end: checkOut })) {
+    const visualEnd = getBookingVisualEndDate(booking as Booking)
+    for (const day of eachDayOfInterval({ start: checkIn, end: visualEnd })) {
       propMap.set(format(day, 'yyyy-MM-dd'), booking as Booking)
     }
   }
