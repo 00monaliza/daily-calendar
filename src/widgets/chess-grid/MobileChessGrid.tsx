@@ -1,10 +1,25 @@
 import React, { useRef, useEffect } from 'react'
-import { format, eachDayOfInterval, parseISO, isToday, isSameDay } from 'date-fns'
+import { format, eachDayOfInterval, parseISO, isToday, isSameDay, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import type { Property } from '@/entities/property/types'
 import type { Booking, BookingWithProperty } from '@/entities/booking/types'
 import { useSettings } from '@/entities/settings/queries'
 import { getPropertyColor } from '@/shared/lib/propertyColors'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 interface Props {
   properties: Property[]
@@ -16,6 +31,7 @@ interface Props {
   onLoadPrev: () => void
   onLoadNext: () => void
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
+  onReorder?: (ids: string[]) => void
 }
 
 function hexToRgb(hex: string) {
@@ -25,9 +41,180 @@ function hexToRgb(hex: string) {
     : { r: 55, g: 110, b: 111 }
 }
 
+function contrastTextColor(r: number, g: number, b: number): string {
+  const luminance = 0.2126 * (r / 255) ** 2.2 + 0.7152 * (g / 255) ** 2.2 + 0.0722 * (b / 255) ** 2.2
+  return luminance > 0.35 ? '#1a1a1a' : '#ffffff'
+}
+
+const MOBILE_COL_WIDTH = 36
+
 function isDayWeekend(day: Date) {
   const d = day.getDay()
   return d === 0 || d === 6
+}
+
+function GripIcon() {
+  return (
+    <svg
+      width="8"
+      height="12"
+      viewBox="0 0 10 14"
+      fill="currentColor"
+      className="text-gray-300 hover:text-gray-500 transition-colors flex-shrink-0"
+    >
+      <circle cx="2" cy="2" r="1.5" />
+      <circle cx="8" cy="2" r="1.5" />
+      <circle cx="2" cy="7" r="1.5" />
+      <circle cx="8" cy="7" r="1.5" />
+      <circle cx="2" cy="12" r="1.5" />
+      <circle cx="8" cy="12" r="1.5" />
+    </svg>
+  )
+}
+
+interface SortableMobileRowProps {
+  property: Property
+  days: Date[]
+  propBookings: Map<string, Booking>
+  rowHeight: number
+  showFullText: boolean
+  to: string
+  onCellClick: (date: string, propertyId: string) => void
+  onBookingClick: (booking: Booking) => void
+}
+
+function SortableMobileRow({
+  property,
+  days,
+  propBookings,
+  rowHeight,
+  showFullText,
+  to,
+  onCellClick,
+  onBookingClick,
+}: SortableMobileRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: property.id })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 1 : 'auto',
+  }
+
+  return (
+    <tr ref={setNodeRef} style={style}>
+      <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
+      <td
+        className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-2 py-0"
+        style={{ minWidth: 100 }}
+      >
+        <div className="flex items-center gap-1.5 py-1">
+          <span
+            {...attributes}
+            {...listeners}
+            className="flex-shrink-0"
+            style={{ cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+            title="Перетащить"
+          >
+            <GripIcon />
+          </span>
+          <div
+            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+            style={{ backgroundColor: getPropertyColor(property) }}
+          />
+          <span className="text-xs font-medium text-gray-800 truncate" style={{ maxWidth: 66 }}>
+            {property.name}
+          </span>
+        </div>
+      </td>
+      {days.map(day => {
+        const dateStr = format(day, 'yyyy-MM-dd')
+        const booking = propBookings.get(dateStr)
+        const today = isToday(day)
+        const weekend = isDayWeekend(day)
+
+        if (booking) {
+          const isStart = isSameDay(parseISO(booking.check_in), day)
+          const isEnd = isSameDay(parseISO(booking.check_out), day)
+          const cardColor = booking.color ?? getPropertyColor(property)
+          const cardRgb = hexToRgb(cardColor)
+
+          let textOverlay: React.ReactNode = null
+          if (isStart) {
+            const checkOut = parseISO(booking.check_out)
+            const rangeEnd = parseISO(to)
+            const effectiveEnd = checkOut <= rangeEnd ? checkOut : rangeEnd
+            const spanDays = Math.max(1, differenceInCalendarDays(effectiveEnd, day) + 1)
+            const textWidth = spanDays * MOBILE_COL_WIDTH - 6
+
+            textOverlay = (
+              <div
+                className="absolute top-0.5 bottom-0.5 left-[5px] z-10 flex flex-col items-center justify-center pointer-events-none overflow-hidden"
+                style={{ width: `${textWidth}px` }}
+              >
+                <span
+                  className={showFullText ? 'text-[10px] font-medium whitespace-normal break-words leading-tight w-full text-center' : 'text-[10px] font-medium truncate w-full text-center'}
+                  style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b) }}
+                >
+                  {showFullText && booking.comment
+                    ? `${booking.guest_name} — ${booking.comment}`
+                    : booking.guest_name}
+                </span>
+              </div>
+            )
+          }
+
+          return (
+            <td
+              key={dateStr}
+              className={`border-b border-gray-100 p-0 cursor-pointer relative ${
+                today ? 'border-l-2 border-l-[#376E6F]' : ''
+              } ${weekend && !today ? 'bg-gray-50' : ''}`}
+              style={{ height: rowHeight }}
+              onClick={() => onBookingClick(booking)}
+            >
+              <div
+                className="absolute inset-y-0.5"
+                style={{
+                  left: isStart ? '2px' : '0',
+                  right: isEnd ? '2px' : '0',
+                  backgroundColor: `rgba(${cardRgb.r},${cardRgb.g},${cardRgb.b},0.85)`,
+                  borderLeft: isStart ? `3px solid ${cardColor}` : 'none',
+                  borderRadius: isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : '0',
+                }}
+              />
+              {textOverlay}
+            </td>
+          )
+        }
+
+        return (
+          <td
+            key={dateStr}
+            className={`border border-gray-200 cursor-pointer active:bg-[#376E6F]/20 transition-colors ${
+              today
+                ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5'
+                : weekend
+                ? 'bg-gray-50'
+                : ''
+            }`}
+            style={{ height: rowHeight }}
+            onClick={() => onCellClick(dateStr, property.id)}
+          />
+        )
+      })}
+      <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
+    </tr>
+  )
 }
 
 export function MobileChessGrid({
@@ -40,6 +227,7 @@ export function MobileChessGrid({
   onLoadPrev,
   onLoadNext,
   scrollContainerRef,
+  onReorder,
 }: Props) {
   const { data: settings } = useSettings()
   const showFullText = settings?.show_full_text ?? true
@@ -47,6 +235,10 @@ export function MobileChessGrid({
 
   const leftSentinelRef = useRef<HTMLTableCellElement>(null)
   const rightSentinelRef = useRef<HTMLTableCellElement>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -98,6 +290,15 @@ export function MobileChessGrid({
     }
   }
 
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id || !onReorder) return
+    const oldIndex = properties.findIndex(p => p.id === active.id)
+    const newIndex = properties.findIndex(p => p.id === over.id)
+    const reordered = arrayMove(properties, oldIndex, newIndex)
+    onReorder(reordered.map(p => p.id))
+  }
+
   if (properties.length === 0) {
     return (
       <div className="flex items-center justify-center flex-1 text-gray-400 text-sm py-16 px-4 text-center">
@@ -114,7 +315,6 @@ export function MobileChessGrid({
     >
       <table className="border-collapse" style={{ minWidth: 'max-content' }}>
         <thead>
-          {/* Row 1: month labels */}
           <tr>
             <th
               ref={leftSentinelRef}
@@ -122,7 +322,6 @@ export function MobileChessGrid({
               style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }}
               aria-hidden="true"
             />
-            {/* Empty corner cell aligned with property name column */}
             <th
               className="sticky left-0 top-0 z-30 bg-white border-b border-r border-gray-200"
               style={{ minWidth: 100, height: 22 }}
@@ -144,7 +343,6 @@ export function MobileChessGrid({
               aria-hidden="true"
             />
           </tr>
-          {/* Row 2: day headers */}
           <tr>
             <th
               className="bg-white"
@@ -185,93 +383,25 @@ export function MobileChessGrid({
             />
           </tr>
         </thead>
-        <tbody>
-          {properties.map(property => {
-            const propBookings = bookingMap.get(property.id) ?? new Map<string, Booking>()
-
-            return (
-              <tr key={property.id}>
-                <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
-                <td
-                  className="sticky left-0 z-20 bg-white border-b border-r border-gray-200 px-2 py-0"
-                  style={{ minWidth: 100 }}
-                >
-                  <div className="flex items-center gap-1.5 py-1">
-                    <div
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: getPropertyColor(property) }}
-                    />
-                    <span className="text-xs font-medium text-gray-800 truncate" style={{ maxWidth: 76 }}>
-                      {property.name}
-                    </span>
-                  </div>
-                </td>
-                {days.map(day => {
-                  const dateStr = format(day, 'yyyy-MM-dd')
-                  const booking = propBookings.get(dateStr)
-                  const today = isToday(day)
-                  const weekend = isDayWeekend(day)
-
-                  if (booking) {
-                    const isStart = isSameDay(parseISO(booking.check_in), day)
-                    const isEnd = isSameDay(parseISO(booking.check_out), day)
-                    const cardColor = booking.color ?? getPropertyColor(property)
-                    const cardRgb = hexToRgb(cardColor)
-
-                    return (
-                      <td
-                        key={dateStr}
-                        className={`border-b border-gray-100 p-0 cursor-pointer relative ${
-                          today ? 'border-l-2 border-l-[#376E6F]' : ''
-                        } ${weekend && !today ? 'bg-gray-50' : ''}`}
-                        style={{ height: rowHeight }}
-                        onClick={() => onBookingClick(booking)}
-                      >
-                        <div
-                          className="absolute inset-y-0.5 flex items-center overflow-hidden"
-                          style={{
-                            left: isStart ? '2px' : '0',
-                            right: isEnd ? '2px' : '0',
-                            backgroundColor: `rgba(${cardRgb.r},${cardRgb.g},${cardRgb.b},0.25)`,
-                            borderLeft: isStart ? `3px solid ${cardColor}` : 'none',
-                            borderRadius: isStart ? '4px 0 0 4px' : isEnd ? '0 4px 4px 0' : '0',
-                          }}
-                        >
-                          {isStart && (
-                            <span
-                              className={showFullText ? 'text-[10px] font-medium px-1 whitespace-normal break-words leading-tight' : 'text-[10px] font-medium px-1 truncate'}
-                              style={{ color: cardColor }}
-                            >
-                              {showFullText && booking.comment
-                                ? `${booking.guest_name} — ${booking.comment}`
-                                : booking.guest_name}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    )
-                  }
-
-                  return (
-                    <td
-                      key={dateStr}
-                      className={`border border-gray-200 cursor-pointer active:bg-[#376E6F]/20 transition-colors ${
-                        today
-                          ? 'border-l-2 border-l-[#376E6F] bg-[#376E6F]/5'
-                          : weekend
-                          ? 'bg-gray-50'
-                          : ''
-                      }`}
-                      style={{ height: rowHeight }}
-                      onClick={() => onCellClick(dateStr, property.id)}
-                    />
-                  )
-                })}
-                <td style={{ width: 1, minWidth: 1, padding: 0, border: 'none' }} aria-hidden="true" />
-              </tr>
-            )
-          })}
-        </tbody>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={properties.map(p => p.id)} strategy={verticalListSortingStrategy}>
+            <tbody>
+              {properties.map(property => (
+                <SortableMobileRow
+                  key={property.id}
+                  property={property}
+                  days={days}
+                  propBookings={bookingMap.get(property.id) ?? new Map()}
+                  rowHeight={rowHeight}
+                  showFullText={showFullText}
+                  to={to}
+                  onCellClick={onCellClick}
+                  onBookingClick={onBookingClick}
+                />
+              ))}
+            </tbody>
+          </SortableContext>
+        </DndContext>
       </table>
     </div>
   )
