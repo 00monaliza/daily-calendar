@@ -187,17 +187,17 @@ function SortablePropertyRow({
                 <span
                   className={
                     isCompactLabel
-                      ? 'text-xs font-semibold leading-tight truncate w-full text-center'
+                      ? 'text-[11px] font-semibold leading-tight truncate w-full text-center'
                       : showFullText
-                        ? 'text-xs font-medium leading-tight whitespace-normal break-words w-full text-center'
-                        : 'text-xs font-medium leading-tight truncate w-full text-center'
+                        ? 'text-[11px] font-medium leading-tight whitespace-normal break-words w-full text-center'
+                        : 'text-[11px] font-medium leading-tight truncate w-full text-center'
                   }
                   style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b) }}
                 >
                   {booking.guest_name}
                 </span>
                 {showFullText && !isCompactLabel && booking.comment && (
-                  <span className="text-[10px] leading-tight whitespace-normal break-words mt-0.5 line-clamp-1 w-full text-center" style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b), opacity: 0.75 }}>
+                  <span className="text-[9px] leading-tight whitespace-normal break-words mt-0.5 line-clamp-1 w-full text-center" style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b), opacity: 0.75 }}>
                     {booking.comment}
                   </span>
                 )}

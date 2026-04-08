@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "finance:backfill-categories": "node scripts/backfill-expense-category-meta.mjs",
+    "finance:backfill-categories:report": "node scripts/backfill-expense-category-meta.mjs --report-only",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },

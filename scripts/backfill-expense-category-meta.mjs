@@ -148,6 +148,53 @@ function getArgValue(name) {
   return process.argv[index + 1]
 }
 
+function timestampForFile() {
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const hh = String(now.getHours()).padStart(2, '0')
+  const min = String(now.getMinutes()).padStart(2, '0')
+  const ss = String(now.getSeconds()).padStart(2, '0')
+  return `${yyyy}${mm}${dd}-${hh}${min}${ss}`
+}
+
+function csvEscape(value) {
+  const raw = value === null || value === undefined ? '' : String(value)
+  if (!/[",\n\r]/.test(raw)) return raw
+  return `"${raw.replace(/"/g, '""')}"`
+}
+
+function writeCsvReport(rows, targetPath) {
+  const headers = [
+    'id',
+    'owner_id',
+    'date',
+    'amount',
+    'db_category',
+    'existing_meta',
+    'inferred_label',
+    'confidence',
+    'reason',
+    'action',
+    'description_before',
+    'description_after',
+  ]
+
+  const lines = [headers.join(',')]
+  for (const row of rows) {
+    lines.push(headers.map(header => csvEscape(row[header])).join(','))
+  }
+
+  const absolutePath = path.isAbsolute(targetPath)
+    ? targetPath
+    : path.resolve(process.cwd(), targetPath)
+
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true })
+  fs.writeFileSync(absolutePath, `${lines.join('\n')}\n`, 'utf8')
+  return absolutePath
+}
+
 function normalizeText(value) {
   return (value ?? '').trim()
 }
@@ -300,9 +347,18 @@ async function main() {
   loadEnvFromWorkspaceFiles()
 
   const apply = hasArg('--apply')
+  const reportOnly = hasArg('--report-only')
   const ownerId = getArgValue('--owner')
   const limitRaw = getArgValue('--limit')
+  const csvPathArg = getArgValue('--csv')
   const limit = limitRaw ? Number(limitRaw) : 0
+
+  if (apply && reportOnly) {
+    throw new Error('Use either --apply or --report-only, not both')
+  }
+
+  const shouldWriteCsv = reportOnly || Boolean(csvPathArg)
+  const csvPath = csvPathArg || `reports/expense-category-backfill-report-${timestampForFile()}.csv`
 
   if (Number.isNaN(limit) || limit < 0) {
     throw new Error('--limit must be a positive integer')
@@ -323,6 +379,7 @@ async function main() {
   const expenses = await fetchAllExpenses(supabase, ownerId, limit)
 
   const updates = []
+  const reportRows = []
   const summary = {
     total: expenses.length,
     alreadyTagged: 0,
@@ -336,6 +393,20 @@ async function main() {
     const existingMeta = readCategoryMeta(expense.description)
     if (existingMeta) {
       summary.alreadyTagged += 1
+      reportRows.push({
+        id: expense.id,
+        owner_id: expense.owner_id,
+        date: expense.date,
+        amount: expense.amount,
+        db_category: expense.category,
+        existing_meta: existingMeta,
+        inferred_label: existingMeta,
+        confidence: 'already',
+        reason: 'already-tagged',
+        action: 'skip-already-tagged',
+        description_before: normalizeText(expense.description),
+        description_after: normalizeText(expense.description),
+      })
       continue
     }
 
@@ -350,6 +421,21 @@ async function main() {
       confidence: inference.confidence,
       before: normalizeText(expense.description),
       after: newDescription,
+    })
+
+    reportRows.push({
+      id: expense.id,
+      owner_id: expense.owner_id,
+      date: expense.date,
+      amount: expense.amount,
+      db_category: expense.category,
+      existing_meta: '',
+      inferred_label: inference.label,
+      confidence: inference.confidence,
+      reason: inference.reason,
+      action: apply ? 'will-apply' : 'would-apply',
+      description_before: normalizeText(expense.description),
+      description_after: newDescription,
     })
 
     summary.toUpdate += 1
@@ -370,6 +456,16 @@ async function main() {
   }
 
   printSummary(summary)
+
+  if (shouldWriteCsv) {
+    const writtenPath = writeCsvReport(reportRows, csvPath)
+    console.log(`CSV report saved: ${writtenPath}`)
+  }
+
+  if (reportOnly) {
+    console.log('Report-only complete. No database changes applied.')
+    return
+  }
 
   if (!apply) {
     console.log('Dry-run complete. To apply changes run with --apply')

@@ -191,10 +191,10 @@ function SortableMobileRow({
                 <span
                   className={
                     isCompactLabel
-                      ? 'text-[10px] font-semibold leading-tight truncate w-full text-center'
+                      ? 'text-[9px] font-semibold leading-tight truncate w-full text-center'
                       : showFullText
-                        ? 'text-[10px] font-medium whitespace-normal break-words leading-tight w-full text-center'
-                        : 'text-[10px] font-medium truncate w-full text-center'
+                        ? 'text-[9px] font-medium whitespace-normal break-words leading-tight w-full text-center'
+                        : 'text-[9px] font-medium truncate w-full text-center'
                   }
                   style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b) }}
                 >
