@@ -7,6 +7,7 @@ export const propertyApi = {
       .from('properties')
       .select('*')
       .eq('owner_id', ownerId)
+      .order('sort_order', { nullsFirst: false })
       .order('created_at')
   },
 
@@ -20,5 +21,13 @@ export const propertyApi = {
 
   async delete(id: string) {
     return supabase.from('properties').delete().eq('id', id)
+  },
+
+  async reorder(ids: string[]) {
+    return Promise.all(
+      ids.map((id, index) =>
+        supabase.from('properties').update({ sort_order: index }).eq('id', id)
+      )
+    )
   },
 }

@@ -8,8 +8,11 @@ export interface Property {
   description: string | null
   color: string
   is_active: boolean
+  sort_order: number | null
   created_at: string
 }
 
-export type PropertyInsert = Omit<Property, 'id' | 'created_at'>
+export type PropertyInsert = Omit<Property, 'id' | 'created_at' | 'sort_order'> & {
+  sort_order?: number | null
+}
 export type PropertyUpdate = Partial<PropertyInsert>

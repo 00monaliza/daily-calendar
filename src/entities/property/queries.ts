@@ -40,3 +40,11 @@ export function useDeleteProperty() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['properties'] }),
   })
 }
+
+export function useReorderProperties() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) => propertyApi.reorder(ids),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['properties'] }),
+  })
+}
