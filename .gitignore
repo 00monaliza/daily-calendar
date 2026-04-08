@@ -27,4 +27,11 @@ README.md
 CLAUDE_CODE_PROMPT.md
 .superpowers
 docs.superpowers/
-import_nasutki.js
+import_nasutki
+
+playwright-report
+.playwright-mcp
+superpowers
+
+vite.config.ts
+package-lock.json
