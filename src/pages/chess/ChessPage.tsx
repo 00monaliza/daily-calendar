@@ -103,7 +103,7 @@ export function ChessPage() {
     prevFromRef.current = from
   }, [from])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const target = teleportTargetRef.current
     const container = scrollContainerRef.current
     if (!target || !container) return
