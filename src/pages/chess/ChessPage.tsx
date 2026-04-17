@@ -39,8 +39,8 @@ function initialWindow() {
 export function ChessPage() {
   const { user } = useUser()
   const isMobile = useIsMobile()
-  const colWidth = isMobile ? MOBILE_COL_WIDTH : DESKTOP_COL_WIDTH
-  const propertyColWidth = isMobile ? MOBILE_PROPERTY_COL_WIDTH : DESKTOP_PROPERTY_COL_WIDTH
+  const fallbackColWidth = isMobile ? MOBILE_COL_WIDTH : DESKTOP_COL_WIDTH
+  const fallbackPropertyColWidth = isMobile ? MOBILE_PROPERTY_COL_WIDTH : DESKTOP_PROPERTY_COL_WIDTH
 
   const [from, setFrom] = useState(() => initialWindow().from)
   const [to, setTo] = useState(() => initialWindow().to)
@@ -52,6 +52,18 @@ export function ChessPage() {
   const isTeleportRef = useRef(false)
   const teleportTargetRef = useRef<string | null>(null)
   const isInitializedRef = useRef(false)
+
+  const getMeasuredDayColWidth = useCallback((container: HTMLDivElement) => {
+    const headerDayCell = container.querySelector<HTMLElement>('th[data-day-col="true"]')
+    const measured = headerDayCell?.getBoundingClientRect().width
+    return measured && measured > 0 ? measured : fallbackColWidth
+  }, [fallbackColWidth])
+
+  const getMeasuredPropertyColWidth = useCallback((container: HTMLDivElement) => {
+    const propertyHeaderCell = container.querySelector<HTMLElement>('th[data-property-col="true"]')
+    const measured = propertyHeaderCell?.getBoundingClientRect().width
+    return measured && measured > 0 ? measured : fallbackPropertyColWidth
+  }, [fallbackPropertyColWidth])
 
   const extendPrev = useCallback(() => {
     if (isLoadingMoreRef.current) return
@@ -86,7 +98,8 @@ export function ChessPage() {
 
     if (todayStr >= from && todayStr <= to && container) {
       const todayOffset = differenceInCalendarDays(parseISO(todayStr), parseISO(from))
-      container.scrollLeft = Math.max(0, todayOffset * colWidth)
+      const dayColWidth = getMeasuredDayColWidth(container)
+      container.scrollLeft = Math.max(0, todayOffset * dayColWidth)
     } else {
       isTeleportRef.current = true
       teleportTargetRef.current = todayStr
@@ -104,21 +117,24 @@ export function ChessPage() {
     }
     const daysDiff = differenceInCalendarDays(parseISO(from), parseISO(prevFromRef.current))
     if (daysDiff !== 0) {
-      container.scrollLeft -= daysDiff * colWidth
+      const dayColWidth = getMeasuredDayColWidth(container)
+      container.scrollLeft -= daysDiff * dayColWidth
     }
     prevFromRef.current = from
-  }, [from, colWidth])
+  }, [from, getMeasuredDayColWidth])
 
   useLayoutEffect(() => {
     const target = teleportTargetRef.current
     const container = scrollContainerRef.current
     if (!target || !container) return
     const dayOffset = differenceInCalendarDays(parseISO(target), parseISO(from))
+    const dayColWidth = getMeasuredDayColWidth(container)
+    const propertyColWidth = getMeasuredPropertyColWidth(container)
     const halfVisible = Math.floor((container.clientWidth - propertyColWidth) / 2)
-    container.scrollLeft = Math.max(0, dayOffset * colWidth - halfVisible)
+    container.scrollLeft = Math.max(0, dayOffset * dayColWidth - halfVisible)
     teleportTargetRef.current = null
     isTeleportRef.current = false
-  }, [from, to, colWidth, propertyColWidth])
+  }, [from, to, getMeasuredDayColWidth, getMeasuredPropertyColWidth])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
@@ -156,8 +172,10 @@ export function ChessPage() {
     isInitializedRef.current = true
     if (!isTeleportRef.current) {
       const todayOffset = differenceInCalendarDays(new Date(), parseISO(from))
+      const dayColWidth = getMeasuredDayColWidth(container)
+      const propertyColWidth = getMeasuredPropertyColWidth(container)
       const halfVisible = Math.floor((container.clientWidth - propertyColWidth) / 2)
-      container.scrollLeft = Math.max(0, todayOffset * colWidth - halfVisible)
+      container.scrollLeft = Math.max(0, todayOffset * dayColWidth - halfVisible)
     }
   }, [isSuccess]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -170,7 +188,8 @@ export function ChessPage() {
     const totalDays = differenceInCalendarDays(parseISO(to), parseISO(from)) + 1
     if (totalDays <= MAX_WINDOW_MONTHS * 31) return
 
-    const anchorIndex = Math.floor(container.scrollLeft / colWidth)
+    const dayColWidth = getMeasuredDayColWidth(container)
+    const anchorIndex = Math.floor(container.scrollLeft / dayColWidth)
     const totalDaysInWindow = differenceInCalendarDays(parseISO(to), parseISO(from))
     const safeIndex = Math.min(Math.max(anchorIndex, 0), totalDaysInWindow)
     const windowStart = parseISO(from)

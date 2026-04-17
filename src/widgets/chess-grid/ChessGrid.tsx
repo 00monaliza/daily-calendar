@@ -382,6 +382,7 @@ export function ChessGrid({
             />
             <th
               className="sticky left-0 z-30 bg-white border-b border-r border-gray-200 px-3 py-2 text-left text-xs text-gray-500 font-medium min-w-[160px]"
+              data-property-col="true"
               style={{ top: 24 }}
             >
               Квартира
@@ -393,6 +394,7 @@ export function ChessGrid({
                 <th
                   key={day.toISOString()}
                   data-today={today ? 'true' : undefined}
+                  data-day-col="true"
                   className={`z-10 border-b border-gray-200 px-1 py-1 text-center min-w-[38px] ${
                     today ? 'bg-[#376E6F]/10' : weekend ? 'bg-gray-100' : 'bg-white'
                   }`}
