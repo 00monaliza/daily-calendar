@@ -1,29 +1,46 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { signIn, signUp } from '@/features/auth/useUser'
+import { requestPasswordReset, signIn, signUp } from '@/features/auth/useUser'
 
 export function AuthPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setNotice(null)
     setLoading(true)
+
+    if (forgotPasswordMode) {
+      const redirectTo = `${window.location.origin}/auth/reset-password`
+      const { error: resetError } = await requestPasswordReset(email.trim(), redirectTo)
+
+      if (resetError) {
+        setError(resetError.message)
+      } else {
+        setNotice('Письмо для сброса пароля отправлено. Проверьте почту.')
+      }
+
+      setLoading(false)
+      return
+    }
 
     let authError
     if (mode === 'login') {
-      ;({ error: authError } = await signIn(email, password))
+      ;({ error: authError } = await signIn(email.trim(), password))
     } else {
-      ;({ error: authError } = await signUp(email, password, fullName, phone))
+      ;({ error: authError } = await signUp(email.trim(), password, fullName, phone))
       if (!authError) {
-        ;({ error: authError } = await signIn(email, password))
+        ;({ error: authError } = await signIn(email.trim(), password))
       }
     }
 
@@ -46,20 +63,30 @@ export function AuthPage() {
         <div className="flex rounded-lg overflow-hidden border border-gray-200 mb-6">
           <button
             className={`flex-1 py-2 text-sm font-medium transition-colors ${mode === 'login' ? 'bg-[#376E6F] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-            onClick={() => setMode('login')}
+            onClick={() => {
+              setMode('login')
+              setForgotPasswordMode(false)
+              setError(null)
+              setNotice(null)
+            }}
           >
             Вход
           </button>
           <button
             className={`flex-1 py-2 text-sm font-medium transition-colors ${mode === 'register' ? 'bg-[#376E6F] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-            onClick={() => setMode('register')}
+            onClick={() => {
+              setMode('register')
+              setForgotPasswordMode(false)
+              setError(null)
+              setNotice(null)
+            }}
           >
             Регистрация
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'register' && (
+          {mode === 'register' && !forgotPasswordMode && (
             <>
               <div>
                 <label htmlFor="auth-fullname" className="block text-sm font-medium text-gray-700 mb-1">Полное имя</label>
@@ -86,6 +113,13 @@ export function AuthPage() {
               </div>
             </>
           )}
+
+          {forgotPasswordMode && (
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+              Введите email аккаунта. Мы отправим ссылку для сброса пароля.
+            </div>
+          )}
+
           <div>
             <label htmlFor="auth-email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
@@ -98,22 +132,49 @@ export function AuthPage() {
               placeholder="your@email.com"
             />
           </div>
-          <div>
-            <label htmlFor="auth-password" className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
-            <input
-              id="auth-password"
-              type="password"
-              required
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#376E6F] focus:border-transparent"
-              placeholder="••••••••"
-            />
-          </div>
+
+          {!forgotPasswordMode && (
+            <>
+              <div>
+                <label htmlFor="auth-password" className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
+                <input
+                  id="auth-password"
+                  type="password"
+                  required
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#376E6F] focus:border-transparent"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              {mode === 'login' && (
+                <div className="text-right">
+                  <button
+                    type="button"
+                    className="text-sm text-[#376E6F] hover:underline"
+                    onClick={() => {
+                      setForgotPasswordMode(true)
+                      setError(null)
+                      setNotice(null)
+                    }}
+                  >
+                    Забыли пароль?
+                  </button>
+                </div>
+              )}
+            </>
+          )}
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
               {error}
+            </div>
+          )}
+
+          {notice && (
+            <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">
+              {notice}
             </div>
           )}
 
@@ -122,8 +183,28 @@ export function AuthPage() {
             disabled={loading}
             className="w-full bg-[#376E6F] text-white py-2.5 rounded-lg font-medium hover:bg-[#1C3334] transition-colors disabled:opacity-50"
           >
-            {loading ? 'Загрузка...' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+            {loading
+              ? 'Загрузка...'
+              : forgotPasswordMode
+                ? 'Отправить ссылку'
+                : mode === 'login'
+                  ? 'Войти'
+                  : 'Зарегистрироваться'}
           </button>
+
+          {forgotPasswordMode && (
+            <button
+              type="button"
+              className="w-full border border-gray-300 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+              onClick={() => {
+                setForgotPasswordMode(false)
+                setError(null)
+                setNotice(null)
+              }}
+            >
+              Назад ко входу
+            </button>
+          )}
         </form>
       </div>
     </div>

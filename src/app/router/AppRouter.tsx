@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { ProtectedRoute } from './ProtectedRoute'
 import { AuthPage } from '@/pages/auth/AuthPage'
+import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
 import { ChessPage } from '@/pages/chess/ChessPage'
 import { PropertiesPage } from '@/pages/properties/PropertiesPage'
 import { FinancesPage } from '@/pages/finances/FinancesPage'
@@ -13,6 +14,7 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/auth" element={<AuthPage />} />
+      <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/"
         element={

@@ -1,7 +1,12 @@
-const NASUTKICALENDAR_TOKEN = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoiOGNkYzUzZjItMzVjOS00M2NkLWE1NzktODhiZTEyYzE3MzZkIiwidXNlcm5hbWUiOiJoZWxsb0Bwb2dvc3RpbS5reiIsImV4cCI6MTc3NTM3NzU3NCwiZW1haWwiOiJoZWxsb0Bwb2dvc3RpbS5reiJ9.zQkx_O1RIirkmJ_xiGbgDoi25h371v9s6MnBLskn60k'
-const SUPABASE_URL = 'https://mxszkkqebaroflrcweno.supabase.co'
-const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im14c3pra3FlYmFyb2ZscmN3ZW5vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDg5MTUzNSwiZXhwIjoyMDkwNDY3NTM1fQ.IMzwZ0HQ3_Nnd2xnrlENGly9AK67CR4tUEoqYXKNZro' // из Supabase Dashboard → Settings → API → service_role
-const OWNER_ID = '5dd9e818-ecab-42d6-9da3-ab83501d2a2b' // твой user id из предыдущих логов
+const NASUTKICALENDAR_TOKEN = process.env.NASUTKI_TOKEN || 'REPLACE_ME'
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://mxszkkqebaroflrcweno.supabase.co'
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'REPLACE_ME' // Supabase Dashboard -> Settings -> API -> service_role
+const OWNER_ID = process.env.OWNER_ID || 'REPLACE_ME' // id пользователя из auth.users
+
+const START_YEAR = Number(process.env.START_YEAR || 2023)
+const END_YEAR = Number(process.env.END_YEAR || new Date().getFullYear())
+const END_MONTH = Number(process.env.END_MONTH || Math.min(12, new Date().getMonth() + 2))
+const FULL_REPLACE = process.env.FULL_REPLACE === '1'
 
 
 const NASUTKICALENDAR_API = 'https://api.nasutkicalendar.ru:21802'
@@ -38,9 +43,51 @@ function mapPaymentStatus(paid, totalCost) {
   return 'partial'
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function validateConfig() {
+  const missing = []
+  if (NASUTKICALENDAR_TOKEN === 'REPLACE_ME') missing.push('NASUTKI_TOKEN')
+  if (SUPABASE_SERVICE_KEY === 'REPLACE_ME') missing.push('SUPABASE_SERVICE_KEY')
+  if (OWNER_ID === 'REPLACE_ME') missing.push('OWNER_ID')
+
+  if (missing.length > 0) {
+    throw new Error(`Не заданы обязательные переменные окружения: ${missing.join(', ')}`)
+  }
+}
+
+async function fetchWithRetry(url, options, retries = 3) {
+  let lastError = null
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options)
+      if (res.ok) return res
+
+      // Для 5xx пробуем повторно
+      if (res.status >= 500 && attempt < retries) {
+        await sleep(300 * attempt)
+        continue
+      }
+
+      return res
+    } catch (err) {
+      lastError = err
+      if (attempt < retries) {
+        await sleep(300 * attempt)
+        continue
+      }
+    }
+  }
+
+  throw lastError || new Error('Сетевая ошибка')
+}
+
 async function fetchMonthBookings(month, year) {
   const url = `${NASUTKICALENDAR_API}/rents/rents/?month=${month}&year=${year}&expand=1`
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     headers: { Authorization: `Bearer ${NASUTKICALENDAR_TOKEN}` }
   })
   if (!res.ok) {
@@ -52,7 +99,7 @@ async function fetchMonthBookings(month, year) {
 }
 
 async function fetchMyProperties() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/properties?owner_id=eq.${OWNER_ID}&select=id,name`, {
+  const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/properties?owner_id=eq.${OWNER_ID}&select=id,name`, {
     headers: {
       apikey: SUPABASE_SERVICE_KEY,
       Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
@@ -63,7 +110,7 @@ async function fetchMyProperties() {
 
 // Создаёт квартиру в Supabase и возвращает её id
 async function createProperty(name, color) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/properties`, {
+  const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/properties`, {
     method: 'POST',
     headers: {
       apikey: SUPABASE_SERVICE_KEY,
@@ -86,36 +133,86 @@ async function createProperty(name, color) {
   return data[0]?.id || null
 }
 
+async function deleteOwnerBookings() {
+  const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/bookings?owner_id=eq.${OWNER_ID}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: SUPABASE_SERVICE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+      Prefer: 'count=exact',
+    }
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Не удалось очистить bookings: ${err}`)
+  }
+
+  const contentRange = res.headers.get('content-range') || '0-0/0'
+  const totalDeleted = Number(contentRange.split('/')[1] || 0)
+  return Number.isNaN(totalDeleted) ? 0 : totalDeleted
+}
+
+async function fetchOwnerBookingCount() {
+  const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/bookings?owner_id=eq.${OWNER_ID}&select=id`, {
+    method: 'HEAD',
+    headers: {
+      apikey: SUPABASE_SERVICE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+      Prefer: 'count=exact',
+    }
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Не удалось получить count bookings: ${err}`)
+  }
+
+  const contentRange = res.headers.get('content-range') || '0-0/0'
+  const total = Number(contentRange.split('/')[1] || 0)
+  return Number.isNaN(total) ? 0 : total
+}
+
 async function insertBookings(bookings) {
   const batchSize = 50
-  let inserted = 0
+  let attempted = 0
   let skipped = 0
 
   for (let i = 0; i < bookings.length; i += batchSize) {
     const batch = bookings.slice(i, i + batchSize)
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings`, {
+    const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/bookings`, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_SERVICE_KEY,
         Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
         'Content-Type': 'application/json',
-        Prefer: 'return=minimal,resolution=ignore-duplicates',
+        Prefer: 'return=minimal',
       },
       body: JSON.stringify(batch)
     })
     if (res.ok || res.status === 201) {
-      inserted += batch.length
+      attempted += batch.length
     } else {
       const err = await res.text()
       console.error(`  ❌ Ошибка вставки батча: ${err}`)
       skipped += batch.length
     }
   }
-  return { inserted, skipped }
+  return { attempted, skipped }
 }
 
 async function main() {
+  validateConfig()
+
   console.log('Импорт из nasutkicalendar...\n')
+  console.log(`Период: ${START_YEAR}-01 .. ${END_YEAR}-${String(END_MONTH).padStart(2, '0')}`)
+  console.log(`Режим: ${FULL_REPLACE ? 'FULL_REPLACE (полная замена)' : 'append (добавление)'}`)
+
+  if (FULL_REPLACE) {
+    console.log('\nОчищаем старые бронирования владельца...')
+    const deleted = await deleteOwnerBookings()
+    console.log(`   Удалено записей: ${deleted}`)
+  }
 
   // 1. Загружаем существующие квартиры
   console.log('Загружаем квартиры из Supabase...')
@@ -123,15 +220,11 @@ async function main() {
   console.log(`   Найдено квартир: ${properties.length}`)
 
   // 2. Собираем все бронирования
-  const startYear = 2023
-  const endYear = 2026
-  const endMonth = new Date().getMonth() + 2
-
   const allRaw = []
   const seen = new Set()
 
-  for (let year = startYear; year <= endYear; year++) {
-    const maxMonth = year === endYear ? endMonth : 12
+  for (let year = START_YEAR; year <= END_YEAR; year++) {
+    const maxMonth = year === END_YEAR ? END_MONTH : 12
     for (let month = 1; month <= maxMonth; month++) {
       process.stdout.write(`  Загружаем ${year}-${String(month).padStart(2, '0')}... `)
       const rents = await fetchMonthBookings(month, year)
@@ -144,7 +237,7 @@ async function main() {
         }
       }
       console.log(`${rents.length} записей (новых: ${newCount})`)
-      await new Promise(resolve => setTimeout(resolve, 300))
+      await sleep(300)
     }
   }
 
@@ -225,12 +318,18 @@ async function main() {
 
   // 6. Вставляем
   console.log('Вставляем в Supabase...')
-  const { inserted, skipped } = await insertBookings(bookings)
+  const { attempted, skipped } = await insertBookings(bookings)
+  const totalInDb = await fetchOwnerBookingCount()
 
   console.log(`\n✅ Готово!`)
-  console.log(`   Вставлено:      ${inserted}`)
-  console.log(`   Дубликаты/пропущено: ${skipped}`)
+  console.log(`   Отправлено в insert: ${attempted}`)
+  console.log(`   Ошибки вставки:      ${skipped}`)
   console.log(`   Не сопоставлено: ${unmatchedCount}`)
+  console.log(`   Итого в БД у owner: ${totalInDb}`)
+
+  if (FULL_REPLACE && totalInDb !== bookings.length - skipped) {
+    console.warn('   ⚠️  Внимание: итоговый count в БД не равен ожидаемому количеству после полной замены.')
+  }
 }
 
 main().catch(console.error)

@@ -55,7 +55,7 @@ function contrastTextColor(r: number, g: number, b: number): string {
   return luminance > 0.35 ? '#1a1a1a' : '#ffffff'
 }
 
-const MOBILE_COL_WIDTH = 36
+const MOBILE_COL_WIDTH = 40
 
 function isDayWeekend(day: Date) {
   const d = day.getDay()
@@ -176,7 +176,7 @@ function SortableMobileRow({
             const checkOut = parseISO(booking.check_out)
             const rangeEnd = parseISO(to)
             const spanDays = getVisibleSpanDays(day, checkOut, rangeEnd)
-            const textWidth = spanDays * MOBILE_COL_WIDTH - 6
+            const textWidth = spanDays * MOBILE_COL_WIDTH - 2
             const isCompactLabel = spanDays <= 2 || textWidth < 84
             const labelText =
               showFullText && !isCompactLabel && booking.comment
@@ -185,16 +185,16 @@ function SortableMobileRow({
 
             textOverlay = (
               <div
-                className="absolute top-0.5 bottom-0.5 left-[5px] z-10 flex flex-col items-center justify-center pointer-events-none overflow-hidden"
+                className="absolute top-0.5 bottom-0.5 left-[2px] z-10 flex flex-col items-center justify-center pointer-events-none overflow-hidden"
                 style={{ width: `${textWidth}px` }}
               >
                 <span
                   className={
                     isCompactLabel
-                      ? 'text-[9px] font-semibold leading-tight truncate w-full text-center'
+                      ? 'text-[8px] font-semibold leading-[1.05] whitespace-normal break-all line-clamp-2 w-full text-center'
                       : showFullText
                         ? 'text-[9px] font-medium whitespace-normal break-words leading-tight w-full text-center'
-                        : 'text-[9px] font-medium truncate w-full text-center'
+                        : 'text-[9px] font-medium whitespace-normal break-words leading-tight line-clamp-2 w-full text-center'
                   }
                   style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b) }}
                 >
@@ -262,7 +262,7 @@ export function MobileChessGrid({
 }: Props) {
   const { data: settings } = useSettings()
   const showFullText = settings?.show_full_text ?? true
-  const rowHeight = settings?.compact_mode ? 32 : 44
+  const rowHeight = settings?.compact_mode ? 38 : 50
 
   const leftSentinelRef = useRef<HTMLTableCellElement>(null)
   const rightSentinelRef = useRef<HTMLTableCellElement>(null)
@@ -363,7 +363,7 @@ export function MobileChessGrid({
                 key={group.label}
                 colSpan={group.count}
                 className="sticky top-0 z-10 bg-white border-b border-r border-gray-200 px-1 text-center text-[10px] text-gray-500 font-semibold capitalize"
-                style={{ height: 22, minWidth: 36 }}
+                style={{ height: 22, minWidth: 38 }}
               >
                 {group.label}
               </th>
@@ -397,7 +397,7 @@ export function MobileChessGrid({
                   className={`z-10 border-b border-gray-200 px-0.5 py-1 text-center ${
                     today ? 'bg-[#376E6F]/10' : weekend ? 'bg-gray-100' : 'bg-white'
                   }`}
-                  style={{ minWidth: 36, top: 22, position: 'sticky' }}
+                  style={{ minWidth: 38, top: 22, position: 'sticky' }}
                 >
                   <div className={`text-[10px] font-medium leading-tight ${today ? 'text-[#376E6F]' : weekend ? 'text-gray-500' : 'text-gray-400'}`}>
                     {format(day, 'EEE', { locale: ru }).slice(0, 2)}

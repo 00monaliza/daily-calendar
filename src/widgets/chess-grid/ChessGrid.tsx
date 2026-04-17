@@ -30,7 +30,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-const COL_WIDTH = 36
+const COL_WIDTH = 38
 
 interface Props {
   properties: Property[]
@@ -174,23 +174,23 @@ function SortablePropertyRow({
             const checkOut = parseISO(booking.check_out)
             const rangeEnd = parseISO(to)
             const spanDays = getVisibleSpanDays(day, checkOut, rangeEnd)
-            const textWidth = spanDays * COL_WIDTH - 6
+            const textWidth = spanDays * COL_WIDTH - 2
             const isCompactLabel = spanDays <= 2 || textWidth < 92
             const tooltipText = [booking.guest_name, booking.comment].filter(Boolean).join(' — ')
 
             textOverlay = (
               <div
-                className="absolute top-0.5 bottom-0.5 left-[5px] z-10 flex flex-col items-center justify-center px-1.5 py-0.5 pointer-events-none overflow-hidden"
+                className="absolute top-0.5 bottom-0.5 left-[2px] z-10 flex flex-col items-center justify-center px-1 py-0.5 pointer-events-none overflow-hidden"
                 style={{ width: `${textWidth}px` }}
                 title={tooltipText}
               >
                 <span
                   className={
                     isCompactLabel
-                      ? 'text-[11px] font-semibold leading-tight truncate w-full text-center'
+                      ? 'text-[10px] font-semibold leading-[1.05] whitespace-normal break-all line-clamp-2 w-full text-center'
                       : showFullText
                         ? 'text-[11px] font-medium leading-tight whitespace-normal break-words w-full text-center'
-                        : 'text-[11px] font-medium leading-tight truncate w-full text-center'
+                        : 'text-[11px] font-medium leading-tight whitespace-normal break-words line-clamp-2 w-full text-center'
                   }
                   style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b) }}
                 >
@@ -261,7 +261,7 @@ export function ChessGrid({
 }: Props) {
   const { data: settings } = useSettings()
   const showFullText = settings?.show_full_text ?? true
-  const rowHeightClass = settings?.compact_mode ? 'h-7' : 'h-10'
+  const rowHeightClass = settings?.compact_mode ? 'h-8' : 'h-11'
 
   const leftSentinelRef = useRef<HTMLTableCellElement>(null)
   const rightSentinelRef = useRef<HTMLTableCellElement>(null)
@@ -393,7 +393,7 @@ export function ChessGrid({
                 <th
                   key={day.toISOString()}
                   data-today={today ? 'true' : undefined}
-                  className={`z-10 border-b border-gray-200 px-1 py-1 text-center min-w-[36px] ${
+                  className={`z-10 border-b border-gray-200 px-1 py-1 text-center min-w-[38px] ${
                     today ? 'bg-[#376E6F]/10' : weekend ? 'bg-gray-100' : 'bg-white'
                   }`}
                   style={{ position: 'sticky', top: 24 }}

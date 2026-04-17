@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   format,
@@ -21,7 +21,10 @@ import type { Property } from '@/entities/property/types'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { MobileChessGrid } from '@/widgets/chess-grid/MobileChessGrid'
 
-const COL_WIDTH = 36
+const DESKTOP_COL_WIDTH = 38
+const MOBILE_COL_WIDTH = 40
+const DESKTOP_PROPERTY_COL_WIDTH = 160
+const MOBILE_PROPERTY_COL_WIDTH = 100
 const EXTEND_MONTHS = 3
 const MAX_WINDOW_MONTHS = 12
 
@@ -36,6 +39,8 @@ function initialWindow() {
 export function ChessPage() {
   const { user } = useUser()
   const isMobile = useIsMobile()
+  const colWidth = isMobile ? MOBILE_COL_WIDTH : DESKTOP_COL_WIDTH
+  const propertyColWidth = isMobile ? MOBILE_PROPERTY_COL_WIDTH : DESKTOP_PROPERTY_COL_WIDTH
 
   const [from, setFrom] = useState(() => initialWindow().from)
   const [to, setTo] = useState(() => initialWindow().to)
@@ -81,7 +86,7 @@ export function ChessPage() {
 
     if (todayStr >= from && todayStr <= to && container) {
       const todayOffset = differenceInCalendarDays(parseISO(todayStr), parseISO(from))
-      container.scrollLeft = Math.max(0, todayOffset * COL_WIDTH)
+      container.scrollLeft = Math.max(0, todayOffset * colWidth)
     } else {
       isTeleportRef.current = true
       teleportTargetRef.current = todayStr
@@ -99,21 +104,21 @@ export function ChessPage() {
     }
     const daysDiff = differenceInCalendarDays(parseISO(from), parseISO(prevFromRef.current))
     if (daysDiff !== 0) {
-      container.scrollLeft -= daysDiff * COL_WIDTH
+      container.scrollLeft -= daysDiff * colWidth
     }
     prevFromRef.current = from
-  }, [from])
+  }, [from, colWidth])
 
   useLayoutEffect(() => {
     const target = teleportTargetRef.current
     const container = scrollContainerRef.current
     if (!target || !container) return
     const dayOffset = differenceInCalendarDays(parseISO(target), parseISO(from))
-    const halfVisible = Math.floor((container.clientWidth - 160) / 2)
-    container.scrollLeft = Math.max(0, dayOffset * COL_WIDTH - halfVisible)
+    const halfVisible = Math.floor((container.clientWidth - propertyColWidth) / 2)
+    container.scrollLeft = Math.max(0, dayOffset * colWidth - halfVisible)
     teleportTargetRef.current = null
     isTeleportRef.current = false
-  }, [from, to])
+  }, [from, to, colWidth, propertyColWidth])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
@@ -124,35 +129,24 @@ export function ChessPage() {
 
   const { data: propertiesData } = useProperties(user?.id)
   const { mutate: reorderProperties } = useReorderProperties()
-  const [orderedProperties, setOrderedProperties] = useState<Property[]>([])
-  const properties = propertiesData ?? []
+  const [orderedPropertyIds, setOrderedPropertyIds] = useState<string[]>([])
+  const properties = useMemo(() => propertiesData ?? [], [propertiesData])
   const { data: bookings = [], isLoading, isSuccess, refetch, isRefetching } = useBookings(user?.id, from, to)
 
-  useEffect(() => {
-    // Avoid a render loop when query data is undefined (e.g. request error).
-    if (!propertiesData) return
+  const displayedProperties = useMemo(() => {
+    if (properties.length === 0) return []
+    if (orderedPropertyIds.length === 0) return properties
 
-    if (propertiesData.length === 0) {
-      setOrderedProperties(prev => (prev.length === 0 ? prev : []))
-      return
-    }
+    const propertyMap = new Map(properties.map(property => [property.id, property]))
+    const orderedExisting: Property[] = orderedPropertyIds
+      .map(id => propertyMap.get(id))
+      .filter((property): property is Property => Boolean(property))
 
-    setOrderedProperties(prev => {
-      if (prev.length === 0) return propertiesData
+    const orderedSet = new Set(orderedExisting.map(property => property.id))
+    const newOnes = properties.filter(property => !orderedSet.has(property.id))
 
-      const existingIds = new Set(propertiesData.map(p => p.id))
-      const previousIds = new Set(prev.map(p => p.id))
-      const propertyMap = new Map(propertiesData.map(p => [p.id, p]))
-
-      const updatedExisting = prev
-        .filter(p => existingIds.has(p.id))
-        .map(p => propertyMap.get(p.id)!)
-
-      const newOnes = propertiesData.filter(p => !previousIds.has(p.id))
-
-      return [...updatedExisting, ...newOnes]
-    })
-  }, [propertiesData])
+    return [...orderedExisting, ...newOnes]
+  }, [properties, orderedPropertyIds])
 
   // Scroll to today after first successful data load
   useEffect(() => {
@@ -162,8 +156,8 @@ export function ChessPage() {
     isInitializedRef.current = true
     if (!isTeleportRef.current) {
       const todayOffset = differenceInCalendarDays(new Date(), parseISO(from))
-      const halfVisible = Math.floor((container.clientWidth - 160) / 2)
-      container.scrollLeft = Math.max(0, todayOffset * COL_WIDTH - halfVisible)
+      const halfVisible = Math.floor((container.clientWidth - propertyColWidth) / 2)
+      container.scrollLeft = Math.max(0, todayOffset * colWidth - halfVisible)
     }
   }, [isSuccess]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -176,7 +170,7 @@ export function ChessPage() {
     const totalDays = differenceInCalendarDays(parseISO(to), parseISO(from)) + 1
     if (totalDays <= MAX_WINDOW_MONTHS * 31) return
 
-    const anchorIndex = Math.floor(container.scrollLeft / COL_WIDTH)
+    const anchorIndex = Math.floor(container.scrollLeft / colWidth)
     const totalDaysInWindow = differenceInCalendarDays(parseISO(to), parseISO(from))
     const safeIndex = Math.min(Math.max(anchorIndex, 0), totalDaysInWindow)
     const windowStart = parseISO(from)
@@ -207,22 +201,9 @@ export function ChessPage() {
   }
 
   function handleReorder(ids: string[]) {
-    const idOrder = new Map(ids.map((id, index) => [id, index]))
-
-    setOrderedProperties(prev => {
-      const source = prev.length > 0 ? prev : properties
-      return [...source].sort(
-        (a, b) =>
-          (idOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-          (idOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER)
-      )
-    })
-
+    setOrderedPropertyIds(ids)
     reorderProperties(ids)
   }
-
-  const displayedProperties =
-    orderedProperties.length > 0 ? orderedProperties : properties
 
   return (
     <div className="flex flex-col h-full">
