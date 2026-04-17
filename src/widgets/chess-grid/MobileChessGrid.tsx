@@ -55,7 +55,7 @@ function contrastTextColor(r: number, g: number, b: number): string {
   return luminance > 0.35 ? '#1a1a1a' : '#ffffff'
 }
 
-const MOBILE_COL_WIDTH = 40
+const MOBILE_COL_WIDTH = 38
 
 function isDayWeekend(day: Date) {
   const d = day.getDay()

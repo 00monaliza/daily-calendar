@@ -22,7 +22,7 @@ import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { MobileChessGrid } from '@/widgets/chess-grid/MobileChessGrid'
 
 const DESKTOP_COL_WIDTH = 38
-const MOBILE_COL_WIDTH = 40
+const MOBILE_COL_WIDTH = 38
 const DESKTOP_PROPERTY_COL_WIDTH = 160
 const MOBILE_PROPERTY_COL_WIDTH = 100
 const EXTEND_MONTHS = 3
