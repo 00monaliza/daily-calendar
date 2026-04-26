@@ -1,5 +1,5 @@
 export type PaymentStatus = 'waiting' | 'partial' | 'paid'
-export type BookingSource = 'direct' | 'kaspi' | 'booking' | 'airbnb' | 'avito' | 'other'
+export type BookingSource = string
 
 export interface Booking {
   id: string

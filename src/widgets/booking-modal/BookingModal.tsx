@@ -1,8 +1,9 @@
-import { useState, type FormEvent, useEffect } from 'react'
+import { useState, type FormEvent } from 'react'
 import { differenceInDays, format, addDays } from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
 import { useCreateBooking, useUpdateBooking, useDeleteBooking } from '@/entities/booking/queries'
 import type { Booking, PaymentStatus, BookingSource } from '@/entities/booking/types'
+import { useSettings, useUpdateSettings } from '@/entities/settings/queries'
 
 const BOOKING_COLORS = ['#5e81ea', '#F5A623', '#E05C5C', '#7EC8E3', '#C3A6E8', '#7BC67E']
 import type { Property } from '@/entities/property/types'
@@ -17,18 +18,30 @@ interface Props {
   onClose: () => void
 }
 
-const SOURCES: { value: BookingSource; label: string }[] = [
-  { value: 'direct', label: 'Напрямую' },
-  { value: 'kaspi', label: 'Kaspi' },
-  { value: 'booking', label: 'Booking.com' },
-  { value: 'airbnb', label: 'Airbnb' },
-  { value: 'avito', label: 'Avito' },
-  { value: 'other', label: 'Другое' },
-]
+const DEFAULT_SOURCES: BookingSource[] = ['direct', 'kaspi', 'booking', 'airbnb', 'avito', 'cash', 'other']
+const SOURCE_LABELS: Record<string, string> = {
+  direct: 'Напрямую',
+  kaspi: 'Kaspi',
+  booking: 'Booking.com',
+  airbnb: 'Airbnb',
+  avito: 'Avito',
+  cash: 'Наличные',
+  other: 'Другое',
+}
+
+function getSourceLabel(value: string) {
+  return SOURCE_LABELS[value] ?? value
+}
+
+function normalizeSourceValue(value: string) {
+  return value.trim()
+}
 
 export function BookingModal({ booking, properties, prefillDate, prefillPropertyId, onClose }: Props) {
   const isMobile = useIsMobile()
   const { user } = useUser()
+  const { data: settings } = useSettings()
+  const updateSettings = useUpdateSettings()
   const createBooking = useCreateBooking()
   const updateBooking = useUpdateBooking()
   const deleteBooking = useDeleteBooking()
@@ -37,6 +50,8 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   const defaultCheckIn = prefillDate ?? format(new Date(), 'yyyy-MM-dd')
   const defaultCheckOut = prefillDate ? format(addDays(new Date(prefillDate), 1), 'yyyy-MM-dd') : tomorrow
   const defaultProperty = prefillPropertyId ?? properties[0]?.id ?? ''
+  const initialNights = differenceInDays(new Date(booking?.check_out ?? defaultCheckOut), new Date(booking?.check_in ?? defaultCheckIn))
+  const defaultPropertyBasePrice = properties.find(p => p.id === (booking?.property_id ?? defaultProperty))?.base_price ?? 0
 
   const [propertyId, setPropertyId] = useState(booking?.property_id ?? defaultProperty)
   const [checkIn, setCheckIn] = useState(booking?.check_in ?? defaultCheckIn)
@@ -47,19 +62,123 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   const [guestPhone, setGuestPhone] = useState(booking?.guest_phone ?? '')
   const [totalPrice, setTotalPrice] = useState(booking?.total_price ?? 0)
   const [prepayment, setPrepayment] = useState(booking?.prepayment ?? 0)
+  const [nightlyPrice, setNightlyPrice] = useState(
+    booking
+      ? (initialNights > 0 ? booking.total_price / initialNights : 0)
+      : defaultPropertyBasePrice,
+  )
+  const [remainingAmount, setRemainingAmount] = useState(Math.max(0, (booking?.total_price ?? 0) - (booking?.prepayment ?? 0)))
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(booking?.payment_status ?? 'waiting')
-  const [source, setSource] = useState<BookingSource>(booking?.source ?? 'direct')
+  const [source, setSource] = useState<BookingSource>(booking?.source ?? DEFAULT_SOURCES[0])
+  const [sourcesDraft, setSourcesDraft] = useState<BookingSource[] | null>(null)
+  const [newSource, setNewSource] = useState('')
   const [comment, setComment] = useState(booking?.comment ?? '')
   const [bookingColor, setBookingColor] = useState(booking?.color ?? BOOKING_COLORS[0])
 
-  const selectedProperty = properties.find(p => p.id === propertyId)
   const nights = differenceInDays(new Date(checkOut), new Date(checkIn))
+  const savedSources = Array.from(
+    new Set(
+      (settings?.booking_sources ?? [])
+        .map(normalizeSourceValue)
+        .filter(Boolean),
+    ),
+  )
+  const sources = sourcesDraft ?? (savedSources.length > 0 ? savedSources : DEFAULT_SOURCES)
+  const currentSource = sources.includes(source) ? source : (sources[0] ?? DEFAULT_SOURCES[0])
 
-  useEffect(() => {
-    if (!booking && selectedProperty && nights > 0) {
-      setTotalPrice(selectedProperty.base_price * nights)
+  function sanitizeMoney(value: string) {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return 0
+    return Math.max(0, parsed)
+  }
+
+  function recalcByNightly(nextNightly: number, nextNights: number, nextPrepayment: number) {
+    const computedTotal = nextNights > 0 ? nextNightly * nextNights : 0
+    setTotalPrice(computedTotal)
+    setRemainingAmount(Math.max(0, computedTotal - nextPrepayment))
+  }
+
+  function handlePropertyChange(nextPropertyId: string) {
+    setPropertyId(nextPropertyId)
+    const property = properties.find(p => p.id === nextPropertyId)
+    if (!property) return
+    const nextNightly = property.base_price
+    setNightlyPrice(nextNightly)
+    recalcByNightly(nextNightly, nights, prepayment)
+  }
+
+  function handleCheckInChange(nextCheckIn: string) {
+    setCheckIn(nextCheckIn)
+    const nextNights = differenceInDays(new Date(checkOut), new Date(nextCheckIn))
+    recalcByNightly(nightlyPrice, nextNights, prepayment)
+  }
+
+  function handleCheckOutChange(nextCheckOut: string) {
+    setCheckOut(nextCheckOut)
+    const nextNights = differenceInDays(new Date(nextCheckOut), new Date(checkIn))
+    recalcByNightly(nightlyPrice, nextNights, prepayment)
+  }
+
+  function handleNightlyPriceChange(rawValue: string) {
+    const nextNightly = sanitizeMoney(rawValue)
+    setNightlyPrice(nextNightly)
+    recalcByNightly(nextNightly, nights, prepayment)
+  }
+
+  function handleTotalPriceChange(rawValue: string) {
+    const nextTotal = sanitizeMoney(rawValue)
+    setTotalPrice(nextTotal)
+
+    const nextNightly = nights > 0 ? nextTotal / nights : 0
+    setNightlyPrice(nextNightly)
+
+    setRemainingAmount(Math.max(0, nextTotal - prepayment))
+  }
+
+  function handlePrepaymentChange(rawValue: string) {
+    const nextPrepayment = sanitizeMoney(rawValue)
+    setPrepayment(nextPrepayment)
+    setRemainingAmount(Math.max(0, totalPrice - nextPrepayment))
+  }
+
+  function handleRemainingAmountChange(rawValue: string) {
+    const nextRemaining = sanitizeMoney(rawValue)
+    setRemainingAmount(nextRemaining)
+    setPrepayment(Math.max(0, totalPrice - nextRemaining))
+  }
+
+  async function persistSources(nextSources: BookingSource[]) {
+    setSourcesDraft(nextSources)
+    try {
+      await updateSettings.mutateAsync({ booking_sources: nextSources })
+    } finally {
+      setSourcesDraft(null)
     }
-  }, [propertyId, checkIn, checkOut, selectedProperty, nights, booking])
+  }
+
+  function handleAddSource() {
+    const value = normalizeSourceValue(newSource)
+    if (!value) return
+
+    if (sources.includes(value)) {
+      setSource(value)
+      setNewSource('')
+      return
+    }
+
+    const next = [...sources, value]
+    setSource(value)
+    setNewSource('')
+    void persistSources(next)
+  }
+
+  function handleRemoveSource(valueToRemove: BookingSource) {
+    const next = sources.filter(s => s !== valueToRemove)
+    if (next.length === 0) return
+
+    setSource(prev => (prev === valueToRemove ? next[0] : prev))
+    void persistSources(next)
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -77,7 +196,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
       total_price: totalPrice,
       prepayment,
       payment_status: paymentStatus,
-      source,
+      source: currentSource,
       comment: comment || null,
       color: bookingColor,
     }
@@ -105,7 +224,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
         <select
           required
           value={propertyId}
-          onChange={e => setPropertyId(e.target.value)}
+          onChange={e => handlePropertyChange(e.target.value)}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
         >
           {properties.map(p => (
@@ -122,7 +241,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
               type="date"
               required
               value={checkIn}
-              onChange={e => setCheckIn(e.target.value)}
+              onChange={e => handleCheckInChange(e.target.value)}
               className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
             />
             <input
@@ -141,7 +260,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
               required
               value={checkOut}
               min={checkIn}
-              onChange={e => setCheckOut(e.target.value)}
+              onChange={e => handleCheckOutChange(e.target.value)}
               className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
             />
             <input
@@ -183,22 +302,45 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Сумма (₸)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Цена квартиры за ночь (₸)</label>
           <input
             type="number"
             min={0}
-            value={totalPrice}
-            onChange={e => setTotalPrice(Number(e.target.value))}
+            value={nightlyPrice}
+            onChange={e => handleNightlyPriceChange(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Предоплата (₸)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Сумма за период (₸)</label>
+          <input
+            type="number"
+            min={0}
+            value={totalPrice}
+            onChange={e => handleTotalPriceChange(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Внесено (₸)</label>
           <input
             type="number"
             min={0}
             value={prepayment}
-            onChange={e => setPrepayment(Number(e.target.value))}
+            onChange={e => handlePrepaymentChange(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Остаток к оплате (₸)</label>
+          <input
+            type="number"
+            min={0}
+            value={remainingAmount}
+            onChange={e => handleRemainingAmountChange(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
           />
         </div>
@@ -223,14 +365,58 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Источник</label>
         <select
-          value={source}
-          onChange={e => setSource(e.target.value as BookingSource)}
+          value={currentSource}
+          onChange={e => setSource(e.target.value)}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
         >
-          {SOURCES.map(s => (
-            <option key={s.value} value={s.value}>{s.label}</option>
+          {sources.map(s => (
+            <option key={s} value={s}>{getSourceLabel(s)}</option>
           ))}
         </select>
+        <div className="mt-2 space-y-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newSource}
+              onChange={e => setNewSource(e.target.value)}
+              placeholder="Новый источник"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+            />
+            <button
+              type="button"
+              onClick={handleAddSource}
+              className="px-3 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              Добавить
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {sources.map(s => (
+              <div
+                key={s}
+                className={`inline-flex items-center rounded-full border px-2 py-1 text-xs ${currentSource === s ? 'border-[#376E6F] text-[#376E6F] bg-[#376E6F]/10' : 'border-gray-200 text-gray-600'}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setSource(s)}
+                  className="pr-1"
+                >
+                  {getSourceLabel(s)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveSource(s)}
+                  disabled={sources.length <= 1}
+                  className="pl-1 text-gray-400 hover:text-red-500 disabled:opacity-40"
+                  aria-label={`Удалить источник ${getSourceLabel(s)}`}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div>

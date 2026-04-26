@@ -5,11 +5,14 @@ import {
   updatePassword,
 } from '@/features/auth/useUser'
 import { supabase } from '@/shared/api/supabaseClient'
+import { Eye, EyeSlash } from '@phosphor-icons/react'
 
 export function ResetPasswordPage() {
   const navigate = useNavigate()
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -132,28 +135,48 @@ export function ResetPasswordPage() {
         <form onSubmit={handleSubmit} className="space-y-4 mt-6">
           <div>
             <label htmlFor="reset-password" className="block text-sm font-medium text-gray-700 mb-1">Новый пароль</label>
-            <input
-              id="reset-password"
-              type="password"
-              required
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#376E6F] focus:border-transparent"
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <input
+                id="reset-password"
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-[#376E6F] focus:border-transparent"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+              >
+                {showPassword ? <EyeSlash size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
 
           <div>
             <label htmlFor="reset-password-confirm" className="block text-sm font-medium text-gray-700 mb-1">Подтвердите пароль</label>
-            <input
-              id="reset-password-confirm"
-              type="password"
-              required
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#376E6F] focus:border-transparent"
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <input
+                id="reset-password-confirm"
+                type={showConfirmPassword ? 'text' : 'password'}
+                required
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-[#376E6F] focus:border-transparent"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                aria-label={showConfirmPassword ? 'Скрыть пароль' : 'Показать пароль'}
+              >
+                {showConfirmPassword ? <EyeSlash size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
 
           {error && (
