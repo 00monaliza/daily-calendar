@@ -77,6 +77,10 @@ function getVisibleSpanDays(startDay: Date, checkoutDay: Date, rangeEndInclusive
   return Math.max(1, differenceInCalendarDays(effectiveEndExclusive, startDay))
 }
 
+function formatBookingAmount(value: number) {
+  return value > 0 ? `${value.toLocaleString('ru-RU')} ₸` : ''
+}
+
 function GripIcon() {
   return (
     <svg
@@ -176,7 +180,8 @@ function SortablePropertyRow({
             const spanDays = getVisibleSpanDays(day, checkOut, rangeEnd)
             const textWidth = spanDays * COL_WIDTH - 2
             const isCompactLabel = spanDays <= 2 || textWidth < 92
-            const tooltipText = [booking.guest_name, booking.comment].filter(Boolean).join(' — ')
+            const tooltipText = [booking.guest_name, booking.total_price > 0 ? formatBookingAmount(booking.total_price) : null, booking.comment].filter(Boolean).join(' — ')
+            const bookingAmount = formatBookingAmount(booking.total_price)
 
             textOverlay = (
               <div
@@ -196,6 +201,18 @@ function SortablePropertyRow({
                 >
                   {booking.guest_name}
                 </span>
+                {bookingAmount && (
+                  <span
+                    className={
+                      isCompactLabel
+                        ? 'text-[8px] font-semibold leading-tight mt-0.5 whitespace-nowrap'
+                        : 'text-[9px] font-semibold leading-tight mt-0.5 whitespace-nowrap'
+                    }
+                    style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b), opacity: 0.92 }}
+                  >
+                    {bookingAmount}
+                  </span>
+                )}
                 {showFullText && !isCompactLabel && booking.comment && (
                   <span className="text-[9px] leading-tight whitespace-normal break-words mt-0.5 line-clamp-1 w-full text-center" style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b), opacity: 0.75 }}>
                     {booking.comment}

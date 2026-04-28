@@ -76,6 +76,10 @@ function getVisibleSpanDays(startDay: Date, checkoutDay: Date, rangeEndInclusive
   return Math.max(1, differenceInCalendarDays(effectiveEndExclusive, startDay))
 }
 
+function formatBookingAmount(value: number) {
+  return value > 0 ? `${value.toLocaleString('ru-RU')} ₸` : ''
+}
+
 function GripIcon() {
   return (
     <svg
@@ -178,6 +182,7 @@ function SortableMobileRow({
             const spanDays = getVisibleSpanDays(day, checkOut, rangeEnd)
             const textWidth = spanDays * MOBILE_COL_WIDTH - 2
             const isCompactLabel = spanDays <= 2 || textWidth < 84
+            const bookingAmount = formatBookingAmount(booking.total_price)
             const labelText =
               showFullText && !isCompactLabel && booking.comment
                 ? `${booking.guest_name} — ${booking.comment}`
@@ -200,6 +205,18 @@ function SortableMobileRow({
                 >
                   {labelText}
                 </span>
+                {bookingAmount && (
+                  <span
+                    className={
+                      isCompactLabel
+                        ? 'text-[7px] font-semibold leading-tight mt-0.5 whitespace-nowrap'
+                        : 'text-[8px] font-semibold leading-tight mt-0.5 whitespace-nowrap'
+                    }
+                    style={{ color: contrastTextColor(cardRgb.r, cardRgb.g, cardRgb.b), opacity: 0.92 }}
+                  >
+                    {bookingAmount}
+                  </span>
+                )}
               </div>
             )
           }

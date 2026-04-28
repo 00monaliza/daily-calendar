@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { differenceInDays, format, addDays } from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
 import { useCreateBooking, useUpdateBooking, useDeleteBooking } from '@/entities/booking/queries'
@@ -35,6 +35,44 @@ function getSourceLabel(value: string) {
 
 function normalizeSourceValue(value: string) {
   return value.trim()
+}
+
+function extractPhoneDigits(value: string) {
+  return value.replace(/\D/g, '')
+}
+
+function formatPhoneForDialing(value: string) {
+  const digits = extractPhoneDigits(value)
+  return digits ? `+${digits}` : ''
+}
+
+function formatMoney(value: number) {
+  return value > 0 ? `${value.toLocaleString('ru-RU')} ₸` : ''
+}
+
+function CallIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+      <path d="M2.75 4.5c0-.966.784-1.75 1.75-1.75h2.1c.68 0 1.287.417 1.532 1.053l.93 2.413a1.75 1.75 0 0 1-.48 1.92l-1.226 1.044a9.78 9.78 0 0 0 4.664 4.664l1.044-1.226a1.75 1.75 0 0 1 1.92-.48l2.413.93c.636.245 1.053.851 1.053 1.532v2.1c0 .966-.784 1.75-1.75 1.75h-.75C9.8 19 2 11.2 2 5.25v-.75Z" />
+    </svg>
+  )
+}
+
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-4 w-4" aria-hidden="true">
+      <rect x="6" y="6" width="9" height="9" rx="2" />
+      <path d="M5 13H4.5A1.5 1.5 0 0 1 3 11.5v-7A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5V5" />
+    </svg>
+  )
+}
+
+function WhatsAppIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+      <path d="M12 2.2a9.8 9.8 0 0 0-8.47 14.76L2 22l5.18-1.51A9.8 9.8 0 1 0 12 2.2Zm0 17.84c-1.33 0-2.63-.35-3.79-1.03l-.27-.16-3.06.89.91-2.98-.17-.28a7.8 7.8 0 1 1 6.38 3.56Zm4.54-5.88c-.25-.12-1.46-.72-1.69-.8-.23-.08-.4-.12-.57.12-.17.25-.66.8-.8.97-.15.17-.29.18-.54.06-.25-.12-1.05-.39-2-1.24-.74-.66-1.24-1.48-1.39-1.73-.14-.25-.01-.39.11-.52.11-.11.25-.29.37-.44.12-.15.16-.25.25-.41.08-.16.04-.29-.02-.41-.06-.12-.56-1.35-.77-1.85-.2-.48-.4-.42-.56-.43h-.48c-.16 0-.41.06-.63.29-.22.24-.84.82-.84 2s.86 2.31.98 2.47c.12.17 1.68 2.57 4.08 3.6.57.24 1.02.39 1.37.5.57.18 1.1.15 1.51.09.46-.07 1.46-.6 1.67-1.17.21-.58.21-1.08.15-1.18-.06-.1-.22-.17-.47-.29Z" />
+    </svg>
+  )
 }
 
 export function BookingModal({ booking, properties, prefillDate, prefillPropertyId, onClose }: Props) {
@@ -74,6 +112,8 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   const [newSource, setNewSource] = useState('')
   const [comment, setComment] = useState(booking?.comment ?? '')
   const [bookingColor, setBookingColor] = useState(booking?.color ?? BOOKING_COLORS[0])
+  const [phoneCopyState, setPhoneCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
+  const phoneCopyTimeoutRef = useRef<number | null>(null)
 
   const nights = differenceInDays(new Date(checkOut), new Date(checkIn))
   const savedSources = Array.from(
@@ -85,6 +125,17 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   )
   const sources = sourcesDraft ?? (savedSources.length > 0 ? savedSources : DEFAULT_SOURCES)
   const currentSource = sources.includes(source) ? source : (sources[0] ?? DEFAULT_SOURCES[0])
+  const guestPhoneDigits = extractPhoneDigits(guestPhone)
+  const guestPhoneDial = formatPhoneForDialing(guestPhone)
+  const guestPhoneWhatsApp = guestPhoneDigits.length >= 10 ? `https://wa.me/${guestPhoneDigits}` : ''
+
+  useEffect(() => {
+    return () => {
+      if (phoneCopyTimeoutRef.current) {
+        window.clearTimeout(phoneCopyTimeoutRef.current)
+      }
+    }
+  }, [])
 
   function sanitizeMoney(value: string) {
     const parsed = Number(value)
@@ -145,6 +196,44 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
     const nextRemaining = sanitizeMoney(rawValue)
     setRemainingAmount(nextRemaining)
     setPrepayment(Math.max(0, totalPrice - nextRemaining))
+  }
+
+  function schedulePhoneCopyReset() {
+    if (phoneCopyTimeoutRef.current) {
+      window.clearTimeout(phoneCopyTimeoutRef.current)
+    }
+
+    phoneCopyTimeoutRef.current = window.setTimeout(() => {
+      setPhoneCopyState('idle')
+    }, 1600)
+  }
+
+  async function handleCopyPhone() {
+    if (!guestPhoneDial) return
+
+    const phoneToCopy = guestPhone.trim() || guestPhoneDial
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(phoneToCopy)
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = phoneToCopy
+        textarea.setAttribute('readonly', 'true')
+        textarea.style.position = 'absolute'
+        textarea.style.left = '-9999px'
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+      }
+
+      setPhoneCopyState('copied')
+    } catch {
+      setPhoneCopyState('error')
+    } finally {
+      schedulePhoneCopyReset()
+    }
   }
 
   async function persistSources(nextSources: BookingSource[]) {
@@ -298,6 +387,37 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
           placeholder="+7 777 000 00 00"
         />
+        {guestPhoneDial && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <a
+              href={`tel:${guestPhoneDial}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <CallIcon />
+              Позвонить
+            </a>
+            <button
+              type="button"
+              onClick={handleCopyPhone}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <CopyIcon />
+              {phoneCopyState === 'copied' ? 'Скопировано' : phoneCopyState === 'error' ? 'Не удалось' : 'Копировать номер'}
+            </button>
+            {guestPhoneWhatsApp && (
+              <a
+                href={guestPhoneWhatsApp}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#25D366]/30 bg-[#25D366]/10 px-3 py-2 text-xs font-medium text-[#128C7E] hover:bg-[#25D366]/15"
+                title="Откроется чат WhatsApp, если номер доступен в сервисе"
+              >
+                <WhatsAppIcon />
+                WhatsApp
+              </a>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -320,6 +440,11 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
             onChange={e => handleTotalPriceChange(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
           />
+          {totalPrice > 0 && (
+            <div className="mt-1 text-xs text-gray-500">
+              Итого: {formatMoney(totalPrice)}
+            </div>
+          )}
         </div>
       </div>
 
