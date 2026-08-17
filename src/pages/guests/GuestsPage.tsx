@@ -89,7 +89,7 @@ function GuestStatsPanel({ bookings }: { bookings: RawBooking[] }) {
                   <Cell key={entry.name} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value: number, _name, item) => [formatMoney(Number(value)), `${item?.payload?.name} (${item?.payload?.count})`]} />
+              <Tooltip formatter={(value, _name, item) => [formatMoney(Number(value ?? 0)), `${item?.payload?.name} (${item?.payload?.count})`]} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
             </PieChart>
           </ResponsiveContainer>
