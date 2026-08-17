@@ -1,22 +1,109 @@
 import { useState } from 'react'
+import { differenceInCalendarMonths } from 'date-fns'
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import { useUser } from '@/features/auth/useUser'
 import { useGuests } from '@/entities/guest/queries'
+import { formatMoney } from '@/shared/lib/formatMoney'
+
+const PIE_COLORS = ['#376E6F', '#5e81ea', '#F5A623', '#E05C5C', '#7EC8E3', '#C3A6E8', '#7BC67E', '#9CA3AF']
+
+type RawBooking = {
+  guest_name: string
+  guest_phone: string | null
+  check_in: string
+  check_out: string
+  total_price: number
+  payment_status: string
+  properties: { name: string } | null
+}
+
+interface GuestStats {
+  totalBookings: number
+  totalRevenue: number
+  avgBookingsPerMonth: number
+  byProperty: { name: string; value: number; count: number }[]
+}
+
+function computeGuestStats(bookings: RawBooking[]): GuestStats {
+  const totalRevenue = bookings.reduce((sum, b) => sum + (b.total_price || 0), 0)
+  const totalBookings = bookings.length
+
+  const checkInTimes = bookings
+    .map(b => new Date(b.check_in).getTime())
+    .filter(t => !Number.isNaN(t))
+  const monthsSpan = checkInTimes.length > 0
+    ? differenceInCalendarMonths(new Date(Math.max(...checkInTimes)), new Date(Math.min(...checkInTimes))) + 1
+    : 1
+  const avgBookingsPerMonth = totalBookings / Math.max(1, monthsSpan)
+
+  const propertyMap = new Map<string, { count: number; value: number }>()
+  for (const b of bookings) {
+    const name = b.properties?.name ?? 'Другое'
+    const cur = propertyMap.get(name) ?? { count: 0, value: 0 }
+    cur.count += 1
+    cur.value += b.total_price || 0
+    propertyMap.set(name, cur)
+  }
+  const byProperty = Array.from(propertyMap.entries()).map(([name, v]) => ({ name, value: v.value, count: v.count }))
+
+  return { totalRevenue, totalBookings, avgBookingsPerMonth, byProperty }
+}
+
+function GuestStatsPanel({ bookings }: { bookings: RawBooking[] }) {
+  const stats = computeGuestStats(bookings)
+
+  return (
+    <div className="mb-4">
+      <h4 className="text-xs font-medium text-gray-500 mb-2">Статистика</h4>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="bg-gray-50 rounded-lg p-2 text-center">
+          <div className="text-sm font-bold text-gray-800">{stats.totalBookings}</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Всего броней</div>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-2 text-center">
+          <div className="text-sm font-bold text-gray-800">{stats.avgBookingsPerMonth.toFixed(1)}</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Броней / мес.</div>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-2 text-center">
+          <div className="text-sm font-bold text-[#376E6F]">{formatMoney(stats.totalRevenue)}</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">Принёс дохода</div>
+        </div>
+      </div>
+
+      {stats.byProperty.length > 1 && (
+        <div>
+          <div className="text-[10px] text-gray-500 mb-1">Доход по квартирам</div>
+          <ResponsiveContainer width="100%" height={180}>
+            <PieChart>
+              <Pie
+                data={stats.byProperty}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius={35}
+                outerRadius={65}
+                paddingAngle={2}
+              >
+                {stats.byProperty.map((entry, i) => (
+                  <Cell key={entry.name} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(value: number, _name, item) => [formatMoney(Number(value)), `${item?.payload?.name} (${item?.payload?.count})`]} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function GuestsPage() {
   const { user } = useUser()
   const { data: rawBookings = [], isLoading } = useGuests(user?.id)
   const [search, setSearch] = useState('')
   const [selectedGuest, setSelectedGuest] = useState<string | null>(null)
-
-  type RawBooking = {
-    guest_name: string
-    guest_phone: string | null
-    check_in: string
-    check_out: string
-    total_price: number
-    payment_status: string
-    properties: { name: string } | null
-  }
 
   const bookings = rawBookings as unknown as RawBooking[]
 
@@ -81,6 +168,8 @@ export function GuestsPage() {
               </button>
               {selectedGuest === guest.name && (
                 <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+                  <GuestStatsPanel bookings={guest.bookings} />
+                  <h4 className="text-xs font-medium text-gray-500 mb-2">История броней</h4>
                   <div className="space-y-2">
                     {guest.bookings.map((b, i) => (
                       <div key={i} className="border border-gray-200 rounded-lg p-2 bg-white">
@@ -145,6 +234,7 @@ export function GuestsPage() {
               {selectedGuestData.phone && (
                 <p className="text-sm text-gray-500 mb-3">{selectedGuestData.phone}</p>
               )}
+              <GuestStatsPanel bookings={selectedGuestData.bookings} />
               <h4 className="text-xs font-medium text-gray-500 mb-2">История броней</h4>
               <div className="space-y-2">
                 {selectedGuestData.bookings.map((b, i) => (

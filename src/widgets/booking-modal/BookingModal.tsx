@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { differenceInDays, format, addDays } from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
 import { useCreateBooking, useUpdateBooking, useDeleteBooking } from '@/entities/booking/queries'
 import type { Booking, PaymentStatus, BookingSource } from '@/entities/booking/types'
 import { useSettings, useUpdateSettings } from '@/entities/settings/queries'
+import { useGuests } from '@/entities/guest/queries'
 
 const BOOKING_COLORS = ['#5e81ea', '#F5A623', '#E05C5C', '#7EC8E3', '#C3A6E8', '#7BC67E']
 import type { Property } from '@/entities/property/types'
@@ -83,6 +84,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   const createBooking = useCreateBooking()
   const updateBooking = useUpdateBooking()
   const deleteBooking = useDeleteBooking()
+  const { data: guestHistory } = useGuests(user?.id)
 
   const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd')
   const defaultCheckIn = prefillDate ?? format(new Date(), 'yyyy-MM-dd')
@@ -128,6 +130,37 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   const guestPhoneDigits = extractPhoneDigits(guestPhone)
   const guestPhoneDial = formatPhoneForDialing(guestPhone)
   const guestPhoneWhatsApp = guestPhoneDigits.length >= 10 ? `https://wa.me/${guestPhoneDigits}` : ''
+
+  const guestDirectory = useMemo(() => {
+    const byNameKey = new Map<string, string>()
+    const byPhoneDigits = new Map<string, string>()
+    const names: string[] = []
+    const phones: string[] = []
+    const seenNames = new Set<string>()
+    const seenPhones = new Set<string>()
+
+    for (const raw of (guestHistory ?? []) as unknown as { guest_name: string; guest_phone: string | null }[]) {
+      const nameKey = raw.guest_name?.trim().toLowerCase()
+      const phoneDigits = raw.guest_phone ? extractPhoneDigits(raw.guest_phone) : ''
+
+      if (nameKey && phoneDigits && !byNameKey.has(nameKey)) {
+        byNameKey.set(nameKey, raw.guest_phone!)
+      }
+      if (phoneDigits && raw.guest_name && !byPhoneDigits.has(phoneDigits)) {
+        byPhoneDigits.set(phoneDigits, raw.guest_name)
+      }
+      if (nameKey && !seenNames.has(nameKey)) {
+        seenNames.add(nameKey)
+        names.push(raw.guest_name)
+      }
+      if (phoneDigits && !seenPhones.has(phoneDigits)) {
+        seenPhones.add(phoneDigits)
+        phones.push(raw.guest_phone!)
+      }
+    }
+
+    return { byNameKey, byPhoneDigits, names, phones }
+  }, [guestHistory])
 
   useEffect(() => {
     return () => {
@@ -196,6 +229,23 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
     const nextRemaining = sanitizeMoney(rawValue)
     setRemainingAmount(nextRemaining)
     setPrepayment(Math.max(0, totalPrice - nextRemaining))
+  }
+
+  function handleGuestNameChange(value: string) {
+    setGuestName(value)
+    if (!guestPhone.trim()) {
+      const match = guestDirectory.byNameKey.get(value.trim().toLowerCase())
+      if (match) setGuestPhone(match)
+    }
+  }
+
+  function handleGuestPhoneChange(value: string) {
+    setGuestPhone(value)
+    if (!guestName.trim()) {
+      const digits = extractPhoneDigits(value)
+      const match = digits ? guestDirectory.byPhoneDigits.get(digits) : undefined
+      if (match) setGuestName(match)
+    }
   }
 
   function schedulePhoneCopyReset() {
@@ -372,10 +422,16 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
           type="text"
           required
           value={guestName}
-          onChange={e => setGuestName(e.target.value)}
+          onChange={e => handleGuestNameChange(e.target.value)}
+          list="guest-name-options"
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
           placeholder="Иванов Иван"
         />
+        <datalist id="guest-name-options">
+          {guestDirectory.names.map(name => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
       </div>
 
       <div>
@@ -383,10 +439,16 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
         <input
           type="tel"
           value={guestPhone}
-          onChange={e => setGuestPhone(e.target.value)}
+          onChange={e => handleGuestPhoneChange(e.target.value)}
+          list="guest-phone-options"
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
           placeholder="+7 777 000 00 00"
         />
+        <datalist id="guest-phone-options">
+          {guestDirectory.phones.map(phone => (
+            <option key={phone} value={phone} />
+          ))}
+        </datalist>
         {guestPhoneDial && (
           <div className="mt-2 flex flex-wrap gap-2">
             <a
