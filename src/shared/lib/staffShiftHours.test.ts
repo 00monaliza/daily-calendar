@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeShiftHours, sumShiftHours } from './staffShiftHours'
+import { computeShiftHours, countWorkedDays, sumShiftHours } from './staffShiftHours'
 
 describe('computeShiftHours', () => {
   it('computes a same-day shift', () => {
@@ -48,5 +48,30 @@ describe('sumShiftHours', () => {
 
   it('returns 0 for an empty list', () => {
     expect(sumShiftHours([])).toBe(0)
+  })
+})
+
+describe('countWorkedDays', () => {
+  it('counts only work-status entries', () => {
+    const shifts = [
+      { status: 'work' as const, start_time: '08:00', end_time: '17:00' },
+      { status: 'work' as const, start_time: '21:00', end_time: '09:00' },
+      { status: 'day_off' as const, start_time: null, end_time: null },
+      { status: 'vacation' as const, start_time: null, end_time: null },
+      { status: 'sick' as const, start_time: null, end_time: null },
+    ]
+    expect(countWorkedDays(shifts)).toBe(2)
+  })
+
+  it('returns 0 for an empty list', () => {
+    expect(countWorkedDays([])).toBe(0)
+  })
+
+  it('returns 0 when nobody worked', () => {
+    const shifts = [
+      { status: 'day_off' as const, start_time: null, end_time: null },
+      { status: 'vacation' as const, start_time: null, end_time: null },
+    ]
+    expect(countWorkedDays(shifts)).toBe(0)
   })
 })

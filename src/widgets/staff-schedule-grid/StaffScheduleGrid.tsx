@@ -3,7 +3,7 @@ import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ShiftCell } from './ShiftCell'
 import { ShiftEditModal } from './ShiftEditModal'
-import { sumShiftHours } from '@/shared/lib/staffShiftHours'
+import { countWorkedDays } from '@/shared/lib/staffShiftHours'
 import type { StaffEmployee } from '@/entities/staff-employee/types'
 import type { StaffShift } from '@/entities/staff-shift/types'
 
@@ -61,7 +61,7 @@ export function StaffScheduleGrid({ ownerId, employees, shifts, days }: Props) {
                   </div>
                 </th>
               ))}
-              <th className="text-right text-xs font-medium text-gray-500 px-3 py-2">Часы</th>
+              <th className="text-right text-xs font-medium text-gray-500 px-3 py-2">Дни</th>
             </tr>
           </thead>
           <tbody>
@@ -70,7 +70,7 @@ export function StaffScheduleGrid({ ownerId, employees, shifts, days }: Props) {
                 const dateStr = format(day, 'yyyy-MM-dd')
                 return shiftsByKey.get(shiftKey(employee.id, dateStr))
               })
-              const totalHours = sumShiftHours(
+              const workedDays = countWorkedDays(
                 employeeShifts.map(s => ({
                   status: s?.status ?? 'day_off',
                   start_time: s?.start_time ?? null,
@@ -98,7 +98,7 @@ export function StaffScheduleGrid({ ownerId, employees, shifts, days }: Props) {
                     )
                   })}
                   <td className="px-3 py-2 text-right text-sm font-bold text-[#376E6F] tabular-nums">
-                    {totalHours.toFixed(1)}
+                    {workedDays}
                   </td>
                 </tr>
               )

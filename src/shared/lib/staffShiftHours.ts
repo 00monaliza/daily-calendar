@@ -38,3 +38,7 @@ export function sumShiftHours(shifts: ShiftHoursInput[]): number {
   const total = shifts.reduce((sum, shift) => sum + computeShiftHours(shift), 0)
   return Math.round(total * 100) / 100
 }
+
+export function countWorkedDays(shifts: ShiftHoursInput[]): number {
+  return shifts.filter(shift => shift.status === 'work').length
+}
