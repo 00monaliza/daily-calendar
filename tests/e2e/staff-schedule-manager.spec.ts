@@ -26,13 +26,13 @@ test('manager can create an employee, build a shift, and see correct total hours
   await page.getByLabel('Должность').fill('E2E Server')
   await page.getByLabel('Логин (телефон или имя пользователя)').fill(`e2e${Date.now()}`)
   await page.getByRole('button', { name: 'Добавить', exact: true }).click()
-  await expect(page.getByText(employeeName)).toBeVisible()
 
   // Open the first day cell for this employee and set a work shift
-  const row = page.locator('tr', { hasText: employeeName })
+  const row = page.getByRole('row', { name: employeeName })
+  await expect(row).toBeVisible()
   await row.locator('td').nth(1).locator('button').click()
 
-  await expect(page.getByText('Смена', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Смена' })).toBeVisible()
   await page.getByLabel('Начало').fill('08:00')
   await page.getByLabel('Конец').fill('17:00')
   await page.getByRole('button', { name: 'Сохранить' }).click()
