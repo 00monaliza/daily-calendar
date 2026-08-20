@@ -6,6 +6,7 @@ const navLinks = [
   { to: '/properties', end: false, label: 'Квартиры' },
   { to: '/finances', end: false, label: 'Финансы' },
   { to: '/guests', end: false, label: 'Гости' },
+  { to: '/staff', end: false, label: 'Персонал' },
 ]
 
 export function TopNav() {

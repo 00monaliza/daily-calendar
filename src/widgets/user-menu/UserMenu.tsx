@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { User, Gear, SignOut, ArrowClockwise } from '@phosphor-icons/react'
+import { User, Gear, SignOut, ArrowClockwise, Users } from '@phosphor-icons/react'
 import { signOut, useUser } from '@/features/auth/useUser'
 
 export function UserMenu() {
@@ -73,6 +73,7 @@ export function UserMenu() {
             {/* Items */}
             <div className="py-1">
               <MenuItem icon={<User size={18} />} label="Личный кабинет" onClick={() => { setOpen(false); navigate('/profile') }} />
+              <MenuItem icon={<Users size={18} />} label="Персонал" onClick={() => { setOpen(false); navigate('/staff') }} />
               <MenuItem icon={<Gear size={18} />} label="Настройки" onClick={() => { setOpen(false); navigate('/settings') }} />
             </div>
 

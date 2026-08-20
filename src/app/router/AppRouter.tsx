@@ -11,6 +11,7 @@ const FinancesPage = lazy(() => import('@/pages/finances/FinancesPage').then(m =
 const GuestsPage = lazy(() => import('@/pages/guests/GuestsPage').then(m => ({ default: m.GuestsPage })))
 const ProfilePage = lazy(() => import('@/pages/profile/ProfilePage').then(m => ({ default: m.ProfilePage })))
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then(m => ({ default: m.SettingsPage })))
+const StaffSchedulePage = lazy(() => import('@/pages/staff/StaffSchedulePage').then(m => ({ default: m.StaffSchedulePage })))
 
 function RouteFallback() {
   return (
@@ -43,6 +44,7 @@ export function AppRouter() {
         <Route path="guests" element={withSuspense(<GuestsPage />)} />
         <Route path="profile" element={withSuspense(<ProfilePage />)} />
         <Route path="settings" element={withSuspense(<SettingsPage />)} />
+        <Route path="staff" element={withSuspense(<StaffSchedulePage />)} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
