@@ -104,7 +104,7 @@ export function ShiftEditModal({ open, ownerId, employeeId, employeeAuthUserId, 
         <button
           onClick={handleSave}
           disabled={upsert.isPending}
-          className="w-full bg-[#376E6F] text-white py-2.5 rounded-lg font-medium hover:bg-[#1C3334] transition-colors disabled:opacity-50"
+          className="w-full md:w-auto md:block md:mx-auto bg-[#376E6F] text-white py-2.5 md:py-2 px-4 md:px-8 md:text-sm rounded-lg font-medium hover:bg-[#1C3334] transition-colors disabled:opacity-50"
         >
           {upsert.isPending ? 'Сохранение...' : 'Сохранить'}
         </button>
