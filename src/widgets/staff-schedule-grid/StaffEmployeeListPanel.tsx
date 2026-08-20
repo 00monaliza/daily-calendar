@@ -15,6 +15,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { BottomSheet } from '@/widgets/bottom-sheet/BottomSheet'
+import { EmployeeAccessModal } from './EmployeeAccessModal'
 import { Toggle } from '@/shared/ui/Toggle'
 import { toast } from '@/shared/ui/Toast'
 import {
@@ -29,7 +30,7 @@ interface Props {
   employees: StaffEmployee[]
 }
 
-function SortableEmployeeRow({ employee }: { employee: StaffEmployee }) {
+function SortableEmployeeRow({ employee, onManageAccess }: { employee: StaffEmployee; onManageAccess: (employee: StaffEmployee) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: employee.id,
   })
@@ -54,6 +55,12 @@ function SortableEmployeeRow({ employee }: { employee: StaffEmployee }) {
         <div className="text-sm font-medium text-gray-800 truncate">{employee.full_name}</div>
         {employee.position && <div className="text-xs text-gray-500 truncate">{employee.position}</div>}
       </div>
+      <button
+        onClick={() => onManageAccess(employee)}
+        className="text-xs font-medium text-[#376E6F] hover:underline flex-shrink-0"
+      >
+        {employee.auth_user_id ? 'PIN ✓' : 'Доступ'}
+      </button>
       <Toggle
         checked={employee.is_active}
         onChange={checked => updateEmployee.mutate({ id: employee.id, data: { is_active: checked } })}
@@ -139,6 +146,7 @@ function AddEmployeeModal({ ownerId, open, onClose }: { ownerId: string; open: b
 
 export function StaffEmployeeListPanel({ ownerId, employees }: Props) {
   const [addOpen, setAddOpen] = useState(false)
+  const [accessEmployee, setAccessEmployee] = useState<StaffEmployee | null>(null)
   const reorderEmployees = useReorderStaffEmployees()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -167,7 +175,7 @@ export function StaffEmployeeListPanel({ ownerId, employees }: Props) {
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={employees.map(e => e.id)} strategy={verticalListSortingStrategy}>
           {employees.map(employee => (
-            <SortableEmployeeRow key={employee.id} employee={employee} />
+            <SortableEmployeeRow key={employee.id} employee={employee} onManageAccess={setAccessEmployee} />
           ))}
         </SortableContext>
       </DndContext>
@@ -177,6 +185,14 @@ export function StaffEmployeeListPanel({ ownerId, employees }: Props) {
       )}
 
       <AddEmployeeModal ownerId={ownerId} open={addOpen} onClose={() => setAddOpen(false)} />
+
+      {accessEmployee && (
+        <EmployeeAccessModal
+          open
+          employee={accessEmployee}
+          onClose={() => setAccessEmployee(null)}
+        />
+      )}
     </div>
   )
 }
