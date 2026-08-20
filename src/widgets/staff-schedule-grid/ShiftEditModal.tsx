@@ -15,12 +15,13 @@ interface Props {
   open: boolean
   ownerId: string
   employeeId: string
+  employeeAuthUserId: string | null
   date: string
   existingShift: StaffShift | undefined
   onClose: () => void
 }
 
-export function ShiftEditModal({ open, ownerId, employeeId, date, existingShift, onClose }: Props) {
+export function ShiftEditModal({ open, ownerId, employeeId, employeeAuthUserId, date, existingShift, onClose }: Props) {
   const [status, setStatus] = useState<StaffShiftStatus>(existingShift?.status ?? 'work')
   const [startTime, setStartTime] = useState(existingShift?.start_time?.slice(0, 5) ?? '08:00')
   const [endTime, setEndTime] = useState(existingShift?.end_time?.slice(0, 5) ?? '17:00')
@@ -31,6 +32,7 @@ export function ShiftEditModal({ open, ownerId, employeeId, date, existingShift,
     const { error } = await upsert.mutateAsync({
       owner_id: ownerId,
       employee_id: employeeId,
+      auth_user_id: employeeAuthUserId,
       date,
       status,
       start_time: status === 'work' ? startTime : null,

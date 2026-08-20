@@ -112,6 +112,7 @@ export function StaffScheduleGrid({ ownerId, employees, shifts, days }: Props) {
           open
           ownerId={ownerId}
           employeeId={editing.employeeId}
+          employeeAuthUserId={employees.find(e => e.id === editing.employeeId)?.auth_user_id ?? null}
           date={editing.date}
           existingShift={editingShift}
           onClose={() => setEditing(null)}
