@@ -12,6 +12,10 @@ export const staffEmployeeApi = {
       .order('created_at')
   },
 
+  async getByAuthUserId(authUserId: string) {
+    return supabase.from('staff_employees').select('*').eq('auth_user_id', authUserId).maybeSingle()
+  },
+
   async create(data: StaffEmployeeInsert) {
     return supabase
       .from('staff_employees')
