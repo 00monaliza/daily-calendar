@@ -1,6 +1,6 @@
 export const SHIFT_STATUS_COLORS = {
-  work: { bg: '#EEF6F6', text: '#1C3334', border: '#376E6F' },
-  day_off: { bg: '#F1F5F9', text: '#64748B', border: '#CBD5E1' },
-  vacation: { bg: '#F3E8FF', text: '#6B21A8', border: '#D8B4FE' },
+  work: { bg: '#FFF1E0', text: '#9A5B13', border: '#F5A623' },
+  day_off: { bg: '#E8F5E9', text: '#276B36', border: '#66BB6A' },
+  vacation: { bg: '#E3F2FD', text: '#1565C0', border: '#64B5F6' },
   sick: { bg: '#FEF2F2', text: '#B91C1C', border: '#FECACA' },
 } as const

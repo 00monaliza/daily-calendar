@@ -47,6 +47,14 @@ export function useUpdateStaffEmployee() {
   })
 }
 
+export function useDeleteStaffEmployee() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => staffEmployeeApi.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff-employees'] }),
+  })
+}
+
 export function useReorderStaffEmployees() {
   const qc = useQueryClient()
   return useMutation({

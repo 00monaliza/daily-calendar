@@ -7,6 +7,9 @@ import { useStaffEmployeeSelf } from '@/entities/staff-employee/queries'
 import { useStaffShiftsForEmployee } from '@/entities/staff-shift/queries'
 import { countWorkedDays } from '@/shared/lib/staffShiftHours'
 import { findNextShift } from '@/shared/lib/staffNextShift'
+import { contrastTextColor, hexToRgb } from '@/shared/lib/colorContrast'
+import { SHIFT_STATUS_COLORS } from '@/shared/lib/shiftStatusColors'
+import type { StaffShiftStatus } from '@/entities/staff-shift/types'
 
 const STATUS_LABEL: Record<string, string> = {
   work: '',
@@ -69,25 +72,34 @@ export function StaffPortalSchedulePage() {
           )}
         </div>
 
-        <div className="bg-gray-50 rounded-lg p-3 text-center">
-          <div className="text-sm font-bold text-[#376E6F] tabular-nums">{weekWorkedDays}</div>
-          <div className="text-[10px] text-gray-500 mt-0.5">Дней отработано на этой неделе</div>
+        <div className="bg-gray-50 rounded-lg p-4 text-center">
+          <div className="text-4xl font-bold text-[#376E6F] tabular-nums">{weekWorkedDays}</div>
+          <div className="text-xs text-gray-500 mt-1">Дней отработано на этой неделе</div>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          {shifts.map(shift => (
-            <div
-              key={shift.id}
-              className="flex items-center justify-between border-b border-gray-100 last:border-0 px-4 py-2.5"
-            >
-              <span className="text-sm text-gray-700">{format(new Date(shift.date), 'EEE d MMM', { locale: ru })}</span>
-              <span className="text-sm tabular-nums text-gray-800">
-                {shift.status === 'work'
-                  ? `${shift.start_time?.slice(0, 5)}–${shift.end_time?.slice(0, 5)}`
-                  : STATUS_LABEL[shift.status]}
-              </span>
-            </div>
-          ))}
+          {shifts.map(shift => {
+            const colors = SHIFT_STATUS_COLORS[shift.status as StaffShiftStatus]
+            const { r, g, b } = hexToRgb(colors.bg)
+            const textColor = contrastTextColor(r, g, b)
+
+            return (
+              <div
+                key={shift.id}
+                className="flex items-center justify-between border-b border-gray-100 last:border-0 px-4 py-2.5"
+              >
+                <span className="text-sm text-gray-700">{format(new Date(shift.date), 'EEE d MMM', { locale: ru })}</span>
+                <span
+                  className="text-xs font-semibold tabular-nums px-2 py-1 rounded-full"
+                  style={{ backgroundColor: colors.bg, color: textColor }}
+                >
+                  {shift.status === 'work'
+                    ? `${shift.start_time?.slice(0, 5)}–${shift.end_time?.slice(0, 5)}`
+                    : STATUS_LABEL[shift.status]}
+                </span>
+              </div>
+            )
+          })}
           {shifts.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-gray-400">На этой неделе нет смен</div>
           )}

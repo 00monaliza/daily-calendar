@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { addDays, addWeeks, eachDayOfInterval, endOfWeek, format, startOfWeek, subWeeks } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { CaretLeft, CaretRight } from '@phosphor-icons/react'
+import { CaretLeft, CaretRight, DownloadSimple } from '@phosphor-icons/react'
 import { useUser } from '@/features/auth/useUser'
 import { useStaffEmployees } from '@/entities/staff-employee/queries'
 import { useStaffShifts } from '@/entities/staff-shift/queries'
 import { StaffEmployeeListPanel } from '@/widgets/staff-schedule-grid/StaffEmployeeListPanel'
 import { StaffScheduleGrid } from '@/widgets/staff-schedule-grid/StaffScheduleGrid'
+import { buildStaffScheduleCsv } from '@/shared/lib/staffScheduleCsv'
 
 export function StaffSchedulePage() {
   const { user } = useUser()
@@ -21,9 +22,32 @@ export function StaffSchedulePage() {
 
   if (!user) return null
 
+  function handleExport() {
+    const csv = buildStaffScheduleCsv(employees, shifts, days)
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `staff-schedule-${fromDate}-${toDate}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="p-4 max-w-5xl mx-auto">
-      <h1 className="text-lg font-semibold text-gray-800 mb-4">График сотрудников</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-lg font-semibold text-gray-800">График сотрудников</h1>
+        <button
+          onClick={handleExport}
+          disabled={employees.length === 0}
+          className="flex items-center gap-1.5 text-sm font-medium text-[#376E6F] hover:underline disabled:opacity-40 disabled:no-underline"
+        >
+          <DownloadSimple size={16} />
+          Экспорт в таблицу
+        </button>
+      </div>
 
       <StaffEmployeeListPanel ownerId={user.id} employees={employees} />
 

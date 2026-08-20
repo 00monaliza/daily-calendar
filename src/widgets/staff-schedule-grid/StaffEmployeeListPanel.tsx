@@ -16,6 +16,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { BottomSheet } from '@/widgets/bottom-sheet/BottomSheet'
 import { EmployeeAccessModal } from './EmployeeAccessModal'
+import { EditEmployeeModal } from './EditEmployeeModal'
 import { Toggle } from '@/shared/ui/Toggle'
 import { toast } from '@/shared/ui/Toast'
 import {
@@ -30,7 +31,15 @@ interface Props {
   employees: StaffEmployee[]
 }
 
-function SortableEmployeeRow({ employee, onManageAccess }: { employee: StaffEmployee; onManageAccess: (employee: StaffEmployee) => void }) {
+function SortableEmployeeRow({
+  employee,
+  onManageAccess,
+  onEdit,
+}: {
+  employee: StaffEmployee
+  onManageAccess: (employee: StaffEmployee) => void
+  onEdit: (employee: StaffEmployee) => void
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: employee.id,
   })
@@ -51,10 +60,10 @@ function SortableEmployeeRow({ employee, onManageAccess }: { employee: StaffEmpl
       <button {...attributes} {...listeners} className="text-gray-300 hover:text-gray-500 cursor-grab flex-shrink-0">
         ⠿
       </button>
-      <div className="flex-1 min-w-0">
+      <button onClick={() => onEdit(employee)} className="flex-1 min-w-0 text-left">
         <div className="text-sm font-medium text-gray-800 truncate">{employee.full_name}</div>
         {employee.position && <div className="text-xs text-gray-500 truncate">{employee.position}</div>}
-      </div>
+      </button>
       <button
         onClick={() => onManageAccess(employee)}
         className="text-xs font-medium text-[#376E6F] hover:underline flex-shrink-0"
@@ -147,6 +156,7 @@ function AddEmployeeModal({ ownerId, open, onClose }: { ownerId: string; open: b
 export function StaffEmployeeListPanel({ ownerId, employees }: Props) {
   const [addOpen, setAddOpen] = useState(false)
   const [accessEmployee, setAccessEmployee] = useState<StaffEmployee | null>(null)
+  const [editEmployee, setEditEmployee] = useState<StaffEmployee | null>(null)
   const reorderEmployees = useReorderStaffEmployees()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -175,7 +185,12 @@ export function StaffEmployeeListPanel({ ownerId, employees }: Props) {
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={employees.map(e => e.id)} strategy={verticalListSortingStrategy}>
           {employees.map(employee => (
-            <SortableEmployeeRow key={employee.id} employee={employee} onManageAccess={setAccessEmployee} />
+            <SortableEmployeeRow
+              key={employee.id}
+              employee={employee}
+              onManageAccess={setAccessEmployee}
+              onEdit={setEditEmployee}
+            />
           ))}
         </SortableContext>
       </DndContext>
@@ -191,6 +206,14 @@ export function StaffEmployeeListPanel({ ownerId, employees }: Props) {
           open
           employee={accessEmployee}
           onClose={() => setAccessEmployee(null)}
+        />
+      )}
+
+      {editEmployee && (
+        <EditEmployeeModal
+          open
+          employee={editEmployee}
+          onClose={() => setEditEmployee(null)}
         />
       )}
     </div>

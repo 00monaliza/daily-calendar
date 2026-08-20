@@ -28,6 +28,10 @@ export const staffEmployeeApi = {
     return supabase.from('staff_employees').update(data).eq('id', id).select().single()
   },
 
+  async delete(id: string) {
+    return supabase.from('staff_employees').delete().eq('id', id)
+  },
+
   async reorder(ids: string[]) {
     return Promise.all(
       ids.map((id, index) =>
