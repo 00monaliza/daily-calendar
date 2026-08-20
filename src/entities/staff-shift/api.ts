@@ -11,6 +11,15 @@ export const staffShiftApi = {
       .lte('date', toDate)
   },
 
+  async getRangeForEmployee(employeeId: string, fromDate: string, toDate: string) {
+    return supabase
+      .from('staff_shifts')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .gte('date', fromDate)
+      .lte('date', toDate)
+  },
+
   async upsert(data: StaffShiftUpsert) {
     return supabase
       .from('staff_shifts')

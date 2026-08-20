@@ -17,6 +17,7 @@ export interface StaffShift {
 export interface StaffShiftUpsert {
   owner_id: string
   employee_id: string
+  auth_user_id?: string | null
   date: string
   status: StaffShiftStatus
   start_time?: string | null
