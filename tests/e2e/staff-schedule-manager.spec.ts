@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { cleanupStaffEmployeesByLoginPrefix } from './support/cleanupStaffEmployee'
 
 test.beforeEach(async ({ page }) => {
   const email = process.env.TEST_EMAIL
@@ -16,6 +17,7 @@ test.beforeEach(async ({ page }) => {
 
 test('manager can create an employee, build a shift, and see correct worked-days total', async ({ page }) => {
   const employeeName = `E2E Test ${Date.now()}`
+  const loginPrefix = 'e2e'
 
   await page.goto('/staff')
   await expect(page.getByRole('heading', { name: 'График сотрудников' })).toBeVisible()
@@ -24,7 +26,7 @@ test('manager can create an employee, build a shift, and see correct worked-days
   await page.getByRole('button', { name: '+ Добавить' }).click()
   await page.getByLabel('Имя', { exact: true }).fill(employeeName)
   await page.getByLabel('Должность').fill('E2E Server')
-  await page.getByLabel('Логин (телефон или имя пользователя)').fill(`e2e${Date.now()}`)
+  await page.getByLabel('Логин (телефон или имя пользователя)').fill(`${loginPrefix}${Date.now()}`)
   await page.getByRole('button', { name: 'Добавить', exact: true }).click()
 
   // Open the first day cell for this employee and set a work shift
@@ -40,4 +42,6 @@ test('manager can create an employee, build a shift, and see correct worked-days
   // Confirm the cell now shows the time range and the row shows 1 worked day
   await expect(row.getByText('08:00–17:00')).toBeVisible()
   await expect(row.locator('td').last()).toHaveText('1')
+
+  await cleanupStaffEmployeesByLoginPrefix(page, loginPrefix)
 })

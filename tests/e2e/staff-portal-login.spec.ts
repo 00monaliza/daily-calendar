@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { cleanupStaffEmployeesByLoginPrefix } from './support/cleanupStaffEmployee'
 
 test('employee can log in after manager grants access and sees their schedule', async ({ page }) => {
   const email = process.env.TEST_EMAIL
@@ -8,7 +9,8 @@ test('employee can log in after manager grants access and sees their schedule', 
   }
 
   const employeeName = `Portal E2E ${Date.now()}`
-  const login = `portale2e${Date.now()}`
+  const loginPrefix = 'portale2e'
+  const login = `${loginPrefix}${Date.now()}`
   const pin = '135790'
 
   // Manager: sign in, create the employee, grant access, set today's shift
@@ -25,7 +27,10 @@ test('employee can log in after manager grants access and sees their schedule', 
   await page.getByLabel('Логин (телефон или имя пользователя)').fill(login)
   await page.getByRole('button', { name: 'Добавить', exact: true }).click()
 
-  await page.getByRole('button', { name: 'Доступ' }).click()
+  // Scoped to this employee's own list-panel row so a leftover employee
+  // from another spec (also lacking access yet) can't make this ambiguous.
+  const employeePanelRow = page.locator('div.flex.items-center.gap-3').filter({ hasText: employeeName })
+  await employeePanelRow.getByRole('button', { name: 'Доступ' }).click()
   await page.getByPlaceholder('••••••').fill(pin)
   await page.getByRole('button', { name: 'Выдать доступ' }).click()
 
@@ -54,4 +59,13 @@ test('employee can log in after manager grants access and sees their schedule', 
 
   await expect(page.getByText(employeeName)).toBeVisible()
   await expect(page.getByText('09:00–18:00')).toBeVisible()
+
+  // Cleanup runs as the owner, but this page's session is now the employee's
+  // — sign back in before deleting the test employee.
+  await page.goto('/auth')
+  await page.locator('#auth-email').fill(email)
+  await page.locator('#auth-password').fill(password)
+  await page.getByRole('button', { name: 'Войти' }).click()
+  await page.waitForURL('/')
+  await cleanupStaffEmployeesByLoginPrefix(page, loginPrefix)
 })
