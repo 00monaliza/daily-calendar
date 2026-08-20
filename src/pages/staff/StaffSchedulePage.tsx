@@ -7,11 +7,12 @@ import { useStaffEmployees } from '@/entities/staff-employee/queries'
 import { useStaffShifts } from '@/entities/staff-shift/queries'
 import { StaffEmployeeListPanel } from '@/widgets/staff-schedule-grid/StaffEmployeeListPanel'
 import { StaffScheduleGrid } from '@/widgets/staff-schedule-grid/StaffScheduleGrid'
-import { buildStaffScheduleCsv } from '@/shared/lib/staffScheduleCsv'
+import { buildStaffScheduleWorkbook } from '@/shared/lib/staffScheduleXlsx'
 
 export function StaffSchedulePage() {
   const { user } = useUser()
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
+  const [exporting, setExporting] = useState(false)
 
   const days = eachDayOfInterval({ start: weekStart, end: endOfWeek(weekStart, { weekStartsOn: 1 }) })
   const fromDate = format(weekStart, 'yyyy-MM-dd')
@@ -22,17 +23,25 @@ export function StaffSchedulePage() {
 
   if (!user) return null
 
-  function handleExport() {
-    const csv = buildStaffScheduleCsv(employees, shifts, days)
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `staff-schedule-${fromDate}-${toDate}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
+  async function handleExport() {
+    setExporting(true)
+    try {
+      const workbook = buildStaffScheduleWorkbook(employees, shifts, days)
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `staff-schedule-${fromDate}-${toDate}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -41,11 +50,11 @@ export function StaffSchedulePage() {
         <h1 className="text-lg font-semibold text-gray-800">График сотрудников</h1>
         <button
           onClick={handleExport}
-          disabled={employees.length === 0}
+          disabled={employees.length === 0 || exporting}
           className="flex items-center gap-1.5 text-sm font-medium text-[#376E6F] hover:underline disabled:opacity-40 disabled:no-underline"
         >
           <DownloadSimple size={16} />
-          Экспорт в таблицу
+          {exporting ? 'Формирование...' : 'Экспорт в таблицу'}
         </button>
       </div>
 
