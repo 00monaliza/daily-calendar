@@ -14,7 +14,7 @@ test.beforeEach(async ({ page }) => {
   await page.waitForURL('/')
 })
 
-test('manager can create an employee, build a shift, and see correct total hours', async ({ page }) => {
+test('manager can create an employee, build a shift, and see correct worked-days total', async ({ page }) => {
   const employeeName = `E2E Test ${Date.now()}`
 
   await page.goto('/staff')
@@ -37,7 +37,7 @@ test('manager can create an employee, build a shift, and see correct total hours
   await page.getByLabel('Конец').fill('17:00')
   await page.getByRole('button', { name: 'Сохранить' }).click()
 
-  // Confirm the cell now shows the time range and the row shows 9.0 total hours
+  // Confirm the cell now shows the time range and the row shows 1 worked day
   await expect(row.getByText('08:00–17:00')).toBeVisible()
-  await expect(row.getByText('9.0')).toBeVisible()
+  await expect(row.locator('td').last()).toHaveText('1')
 })
