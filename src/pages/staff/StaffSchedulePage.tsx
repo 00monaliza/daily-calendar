@@ -7,6 +7,7 @@ import { useStaffEmployees } from '@/entities/staff-employee/queries'
 import { useStaffShifts } from '@/entities/staff-shift/queries'
 import { StaffEmployeeListPanel } from '@/widgets/staff-schedule-grid/StaffEmployeeListPanel'
 import { StaffScheduleGrid } from '@/widgets/staff-schedule-grid/StaffScheduleGrid'
+import { StaffMonthlySummary } from '@/widgets/staff-schedule-grid/StaffMonthlySummary'
 import { buildStaffScheduleWorkbook } from '@/shared/lib/staffScheduleXlsx'
 
 export function StaffSchedulePage() {
@@ -81,6 +82,10 @@ export function StaffSchedulePage() {
       </div>
 
       <StaffScheduleGrid ownerId={user.id} employees={employees} shifts={shifts} days={days} />
+
+      <div className="mt-6">
+        <StaffMonthlySummary ownerId={user.id} employees={employees} />
+      </div>
     </div>
   )
 }
