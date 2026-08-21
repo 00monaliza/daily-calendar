@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { differenceInDays, format, addDays } from 'date-fns'
+import { differenceInDays, format, addDays, parseISO } from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
+import { toast } from '@/shared/ui/Toast'
 import { useCreateBooking, useUpdateBooking, useDeleteBooking } from '@/entities/booking/queries'
 import type { Booking, PaymentStatus, BookingSource } from '@/entities/booking/types'
 import { useSettings, useUpdateSettings } from '@/entities/settings/queries'
@@ -88,9 +89,9 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
 
   const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd')
   const defaultCheckIn = prefillDate ?? format(new Date(), 'yyyy-MM-dd')
-  const defaultCheckOut = prefillDate ? format(addDays(new Date(prefillDate), 1), 'yyyy-MM-dd') : tomorrow
+  const defaultCheckOut = prefillDate ? format(addDays(parseISO(prefillDate), 1), 'yyyy-MM-dd') : tomorrow
   const defaultProperty = prefillPropertyId ?? properties[0]?.id ?? ''
-  const initialNights = differenceInDays(new Date(booking?.check_out ?? defaultCheckOut), new Date(booking?.check_in ?? defaultCheckIn))
+  const initialNights = differenceInDays(parseISO(booking?.check_out ?? defaultCheckOut), parseISO(booking?.check_in ?? defaultCheckIn))
   const defaultPropertyBasePrice = properties.find(p => p.id === (booking?.property_id ?? defaultProperty))?.base_price ?? 0
 
   const [propertyId, setPropertyId] = useState(booking?.property_id ?? defaultProperty)
@@ -117,7 +118,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   const [phoneCopyState, setPhoneCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
   const phoneCopyTimeoutRef = useRef<number | null>(null)
 
-  const nights = differenceInDays(new Date(checkOut), new Date(checkIn))
+  const nights = differenceInDays(parseISO(checkOut), parseISO(checkIn))
   const savedSources = Array.from(
     new Set(
       (settings?.booking_sources ?? [])
@@ -193,13 +194,13 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
 
   function handleCheckInChange(nextCheckIn: string) {
     setCheckIn(nextCheckIn)
-    const nextNights = differenceInDays(new Date(checkOut), new Date(nextCheckIn))
+    const nextNights = differenceInDays(parseISO(checkOut), parseISO(nextCheckIn))
     recalcByNightly(nightlyPrice, nextNights, prepayment)
   }
 
   function handleCheckOutChange(nextCheckOut: string) {
     setCheckOut(nextCheckOut)
-    const nextNights = differenceInDays(new Date(nextCheckOut), new Date(checkIn))
+    const nextNights = differenceInDays(parseISO(nextCheckOut), parseISO(checkIn))
     recalcByNightly(nightlyPrice, nextNights, prepayment)
   }
 
@@ -321,7 +322,10 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!user) return
+    if (!user) {
+      toast.error('Не удалось определить пользователя, попробуйте ещё раз')
+      return
+    }
 
     const data = {
       owner_id: user.id,
@@ -668,7 +672,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
         className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}

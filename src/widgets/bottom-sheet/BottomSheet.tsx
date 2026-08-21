@@ -26,8 +26,11 @@ export function BottomSheet({ open, onClose, title, children }: Props) {
 
   if (!open) return null
 
+  // z-index must stay above ToastContainer's z-[100] — otherwise a lingering
+  // toast (e.g. from an action just before this sheet opened) visually and
+  // functionally blocks clicks on the sheet's own buttons underneath it.
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+    <div className="fixed inset-0 z-[110] flex flex-col justify-end">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40"
