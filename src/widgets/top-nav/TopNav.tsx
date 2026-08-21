@@ -11,7 +11,10 @@ const navLinks = [
 
 export function TopNav() {
   return (
-    <nav className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between gap-4">
+    <nav
+      className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between gap-4"
+      style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' }}
+    >
       <div className="flex items-center gap-6">
         <span className="font-bold text-[#376E6F] text-lg flex-shrink-0">Pogostim</span>
 
