@@ -427,15 +427,17 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
           required
           value={guestName}
           onChange={e => handleGuestNameChange(e.target.value)}
-          list="guest-name-options"
+          list={isMobile ? undefined : 'guest-name-options'}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
           placeholder="Иванов Иван"
         />
-        <datalist id="guest-name-options">
-          {guestDirectory.names.map(name => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
+        {!isMobile && (
+          <datalist id="guest-name-options">
+            {guestDirectory.names.map(name => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+        )}
       </div>
 
       <div>
@@ -444,15 +446,17 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
           type="tel"
           value={guestPhone}
           onChange={e => handleGuestPhoneChange(e.target.value)}
-          list="guest-phone-options"
+          list={isMobile ? undefined : 'guest-phone-options'}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
           placeholder="+7 777 000 00 00"
         />
-        <datalist id="guest-phone-options">
-          {guestDirectory.phones.map(phone => (
-            <option key={phone} value={phone} />
-          ))}
-        </datalist>
+        {!isMobile && (
+          <datalist id="guest-phone-options">
+            {guestDirectory.phones.map(phone => (
+              <option key={phone} value={phone} />
+            ))}
+          </datalist>
+        )}
         {guestPhoneDial && (
           <div className="mt-2 flex flex-wrap gap-2">
             <a
