@@ -444,15 +444,30 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
           type="tel"
           value={guestPhone}
           onChange={e => handleGuestPhoneChange(e.target.value)}
-          list="guest-phone-options"
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
           placeholder="+7 777 000 00 00"
         />
-        <datalist id="guest-phone-options">
-          {guestDirectory.phones.map(phone => (
-            <option key={phone} value={phone} />
-          ))}
-        </datalist>
+        {/*
+          Deliberately not a native <datalist> here: on mobile WebKit,
+          `list` on an `<input type="tel">` intercepts the field's
+          long-press "Вставить" (paste) bubble, making it impossible to
+          paste a copied number in. These chips give the same quick-fill
+          convenience without touching the input's native paste handling.
+        */}
+        {!guestPhone.trim() && guestDirectory.phones.length > 0 && (
+          <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+            {guestDirectory.phones.slice(0, 6).map(phone => (
+              <button
+                key={phone}
+                type="button"
+                onClick={() => handleGuestPhoneChange(phone)}
+                className="flex-shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100"
+              >
+                {phone}
+              </button>
+            ))}
+          </div>
+        )}
         {guestPhoneDial && (
           <div className="mt-2 flex flex-wrap gap-2">
             <a

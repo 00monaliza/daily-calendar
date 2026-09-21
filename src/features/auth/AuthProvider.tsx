@@ -19,6 +19,8 @@ export const AuthContext = createContext<AuthContextValue>({ user: null, loading
  * error surfaced — e.g. BookingModal's Save button would silently no-op.
  * Fetching and subscribing exactly once here removes the race entirely.
  */
+const GET_USER_TIMEOUT_MS = 10_000
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
@@ -26,15 +28,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true
 
+    // On a flaky mobile connection (backgrounded tab, weak signal) this
+    // request can hang indefinitely with no built-in timeout, which left
+    // `loading` — and ProtectedRoute's spinner — stuck forever. Time it out
+    // so the app falls through to the normal signed-out flow instead of
+    // hanging; onAuthStateChange below will still correct `user` once the
+    // request (or a retry) eventually completes.
+    const timeoutId = window.setTimeout(() => {
+      if (!active) return
+      setLoading(false)
+    }, GET_USER_TIMEOUT_MS)
+
     supabase.auth
       .getUser()
       .then(({ data }) => {
         if (!active) return
+        window.clearTimeout(timeoutId)
         setUser(data.user)
         setLoading(false)
       })
       .catch(() => {
         if (!active) return
+        window.clearTimeout(timeoutId)
         setLoading(false)
       })
 
@@ -48,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       active = false
+      window.clearTimeout(timeoutId)
       subscription.unsubscribe()
     }
   }, [])

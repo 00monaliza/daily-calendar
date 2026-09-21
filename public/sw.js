@@ -1,4 +1,4 @@
-const SW_VERSION = 'v2.0.0'
+const SW_VERSION = 'v2.1.0'
 const CACHE_PREFIX = 'pogostim'
 const STATIC_CACHE = `${CACHE_PREFIX}-static-v2`
 const API_CACHE = `${CACHE_PREFIX}-api-v2`
@@ -16,6 +16,7 @@ const PAGE_TTL_MS = 1000 * 60 * 30
 const IMAGE_CACHE_MAX_ENTRIES = 60
 const API_CACHE_MAX_ENTRIES = 80
 const PAGE_CACHE_MAX_ENTRIES = 30
+const STATIC_ASSET_MAX_ENTRIES = 120
 
 const PRECACHE_ASSETS = [
   '/',
@@ -113,7 +114,21 @@ async function handleGetRequest(request) {
     }
 
     if (isStaticAsset(request)) {
-      return cacheFirst(request, STATIC_CACHE, PAGE_TTL_MS)
+      // Vite fingerprints build output under /assets/ (a new deploy ships
+      // new filenames, never overwrites an old one), so a given URL's
+      // content there never changes — cache it forever instead of
+      // revalidating it on a TTL. Revalidating used to be actively
+      // harmful: after a redeploy the old hashed file is gone from the
+      // server, so the "refresh" fetch 404'd and broke an already-cached,
+      // still-perfectly-valid chunk for anyone with the tab open past the
+      // TTL window. Anything else with a script/style/font destination
+      // (e.g. `/src/*.tsx` served directly by `vite dev`) isn't
+      // fingerprinted and can change under the same URL, so it still
+      // needs real revalidation.
+      if (isImmutableBuildAsset(request.url)) {
+        return cacheFirstImmutable(request, STATIC_CACHE, STATIC_ASSET_MAX_ENTRIES)
+      }
+      return networkFirstStatic(request, STATIC_CACHE)
     }
 
     if (isImageRequest(request)) {
@@ -143,9 +158,14 @@ async function cleanupOldCaches() {
   await Promise.all(keys.filter((key) => !keep.has(key)).map((key) => caches.delete(key)))
 }
 
-async function cacheFirst(request, cacheName, ttlMs) {
+// For fingerprinted build output: a cache hit is correct forever (the URL
+// itself encodes the content), so there's no TTL to revalidate against and
+// no "expired" fetch that can turn a working, already-cached chunk into a
+// 404 after a redeploy (contrast getValidCachedResponse()'s TTL-based
+// strategies below, used where a URL's content genuinely can change).
+async function cacheFirstImmutable(request, cacheName, maxEntries) {
   const cache = await caches.open(cacheName)
-  const cached = await getValidCachedResponse(cacheName, request, ttlMs)
+  const cached = await cache.match(request)
   if (cached) {
     await touchCacheEntry(cacheName, request)
     return cached
@@ -154,9 +174,35 @@ async function cacheFirst(request, cacheName, ttlMs) {
   const fresh = await fetch(request)
   if (isCacheableResponse(fresh)) {
     await cache.put(request, fresh.clone())
-    await updateCacheMetadata(cacheName, request, Date.now())
+    await updateCacheMetadata(cacheName, request, Date.now(), maxEntries)
   }
   return fresh
+}
+
+// For same-destination requests that aren't fingerprinted (e.g. `vite dev`
+// serving /src/*.tsx directly), where the URL can legitimately point at
+// different content over time. Network-first keeps those fresh; a cached
+// copy — regardless of age — is only a fallback for when the network
+// request itself fails, so a flaky connection degrades to "possibly
+// slightly stale" instead of a hard failure.
+async function networkFirstStatic(request, cacheName) {
+  try {
+    const response = await fetch(request)
+    if (isCacheableResponse(response)) {
+      const cache = await caches.open(cacheName)
+      await cache.put(request, response.clone())
+      await updateCacheMetadata(cacheName, request, Date.now())
+    }
+    return response
+  } catch (error) {
+    const cache = await caches.open(cacheName)
+    const cached = await cache.match(request)
+    if (cached) {
+      await touchCacheEntry(cacheName, request)
+      return cached
+    }
+    throw error
+  }
 }
 
 async function staleWhileRevalidate(request, cacheName, ttlMs, maxEntries) {
@@ -315,6 +361,13 @@ function isStaticAsset(request) {
     request.destination === 'script' ||
     request.destination === 'font'
   )
+}
+
+// Vite's default build writes every bundled script/style/font under
+// /assets/ with a content hash in the filename, so this path prefix is
+// how we tell "safe to treat as immutable" apart from "must revalidate".
+function isImmutableBuildAsset(rawUrl) {
+  return new URL(rawUrl, self.location.origin).pathname.startsWith('/assets/')
 }
 
 function isImageRequest(request) {
