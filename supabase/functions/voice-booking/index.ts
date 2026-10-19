@@ -194,13 +194,16 @@ Deno.serve(async req => {
     const appUrl = (Deno.env.get('APP_URL') ?? '').replace(/\/$/, '')
     const summary = buildSummary(parsed, availability, properties)
 
-    return jsonResponse({
+    const result = {
       draft_id: draft.id,
       open_url: appUrl ? `${appUrl}/?voice_draft=${draft.id}` : null,
       summary,
-      parsed,
-      availability,
-    })
+    }
+    // The Shortcut only needs the summary and link; the full draft (with a
+    // phone looked up from guest history) stays behind RLS for the signed-in
+    // app, so a leaked voice token can't be used to look up guests' phones.
+    if (req.headers.get('x-voice-token')) return jsonResponse(result)
+    return jsonResponse({ ...result, parsed, availability })
   } catch (err) {
     console.error('voice-booking failed', err)
     const message = err instanceof Error ? err.message : 'Unknown error'
