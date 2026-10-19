@@ -1,12 +1,12 @@
-// Voice booking: takes a dictated phrase (from the iOS Shortcut or the app),
-// extracts the booking fields with Claude, checks availability and stores a
-// pending draft the user confirms in the app. It never creates a booking.
+// Voice booking: takes a dictated phrase from the iOS Shortcut, extracts the
+// booking fields with Claude, checks availability and stores a pending draft
+// the user confirms in the app. It never creates a booking.
 //
-// Auth, either:
-//   - header `x-voice-token: <personal token>` (iOS Shortcut; see Settings page)
-//   - header `Authorization: Bearer <user JWT>` (the web app)
-// Deploy with --no-verify-jwt: the Shortcut has no Supabase JWT, so this
-// function verifies the caller itself.
+// Auth: header `x-voice-token: <personal token>` only (see Settings page).
+// Signed-in app users can't call it, so nobody but the token's owner spends
+// the Anthropic key, and each owner is capped at VOICE_BOOKING_DAILY_LIMIT
+// calls per 24 hours. Deploy with --no-verify-jwt: the Shortcut has no
+// Supabase JWT, so this function verifies the token itself.
 
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import Anthropic from 'npm:@anthropic-ai/sdk@0.135.0'
@@ -26,6 +26,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-voice-token',
 }
 
+const DEFAULT_DAILY_LIMIT = 30
+
 const DEFAULT_SOURCES = ['direct', 'kaspi', 'booking', 'airbnb', 'avito', 'cash', 'other']
 const MAX_TRANSCRIPT_LENGTH = 2000
 
@@ -43,22 +45,30 @@ async function sha256Hex(value: string): Promise<string> {
 
 async function resolveOwnerId(req: Request, adminClient: SupabaseClient): Promise<string | null> {
   const voiceToken = req.headers.get('x-voice-token')?.trim()
-  if (voiceToken) {
-    const { data } = await adminClient
-      .from('voice_tokens')
-      .select('owner_id')
-      .eq('token_hash', await sha256Hex(voiceToken))
-      .maybeSingle()
-    return data?.owner_id ?? null
-  }
+  if (!voiceToken) return null
+  const { data } = await adminClient
+    .from('voice_tokens')
+    .select('owner_id')
+    .eq('token_hash', await sha256Hex(voiceToken))
+    .maybeSingle()
+  return data?.owner_id ?? null
+}
 
-  const authHeader = req.headers.get('Authorization')
-  if (!authHeader) return null
-  const callerClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
-    global: { headers: { Authorization: authHeader } },
-  })
-  const { data, error } = await callerClient.auth.getUser()
-  return error || !data.user ? null : data.user.id
+function dailyLimit(): number {
+  const value = Number(Deno.env.get('VOICE_BOOKING_DAILY_LIMIT'))
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_DAILY_LIMIT
+}
+
+// Every call that reaches Claude ends in a draft, so drafts from the last
+// 24 hours are the call count.
+async function overDailyLimit(adminClient: SupabaseClient, ownerId: string): Promise<boolean> {
+  const { count, error } = await adminClient
+    .from('voice_booking_drafts')
+    .select('id', { count: 'exact', head: true })
+    .eq('owner_id', ownerId)
+    .gte('created_at', new Date(Date.now() - 86_400_000).toISOString())
+  if (error) throw error
+  return (count ?? 0) >= dailyLimit()
 }
 
 function todayIn(timeZone: string): { today: string; weekday: string } {
@@ -129,6 +139,12 @@ Deno.serve(async req => {
     if (!ownerId) {
       return jsonResponse({ error: 'Not authenticated', summary: 'Токен не подошёл. Создайте новый в Настройках.' }, 401)
     }
+    if (await overDailyLimit(adminClient, ownerId)) {
+      return jsonResponse({
+        error: 'Daily limit reached',
+        summary: `Лимит ${dailyLimit()} голосовых броней за сутки исчерпан. Добавьте бронь вручную в приложении.`,
+      }, 429)
+    }
 
     const [{ data: propertiesData, error: propertiesError }, { data: settings }] = await Promise.all([
       adminClient
@@ -194,16 +210,14 @@ Deno.serve(async req => {
     const appUrl = (Deno.env.get('APP_URL') ?? '').replace(/\/$/, '')
     const summary = buildSummary(parsed, availability, properties)
 
-    const result = {
+    // Only the summary and link: the full draft (with a phone looked up from
+    // guest history) stays behind RLS for the signed-in app, so a leaked voice
+    // token can't be used to look up guests' phones.
+    return jsonResponse({
       draft_id: draft.id,
       open_url: appUrl ? `${appUrl}/?voice_draft=${draft.id}` : null,
       summary,
-    }
-    // The Shortcut only needs the summary and link; the full draft (with a
-    // phone looked up from guest history) stays behind RLS for the signed-in
-    // app, so a leaked voice token can't be used to look up guests' phones.
-    if (req.headers.get('x-voice-token')) return jsonResponse(result)
-    return jsonResponse({ ...result, parsed, availability })
+    })
   } catch (err) {
     console.error('voice-booking failed', err)
     const message = err instanceof Error ? err.message : 'Unknown error'
