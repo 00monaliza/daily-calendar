@@ -1,0 +1,205 @@
+// Voice booking: takes a dictated phrase (from the iOS Shortcut or the app),
+// extracts the booking fields with Claude, checks availability and stores a
+// pending draft the user confirms in the app. It never creates a booking.
+//
+// Auth, either:
+//   - header `x-voice-token: <personal token>` (iOS Shortcut; see Settings page)
+//   - header `Authorization: Bearer <user JWT>` (the web app)
+// Deploy with --no-verify-jwt: the Shortcut has no Supabase JWT, so this
+// function verifies the caller itself.
+
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import Anthropic from 'npm:@anthropic-ai/sdk@0.135.0'
+import { addDaysIso, buildAvailabilityReport, isIsoDate } from '../_shared/bookingAvailability.ts'
+import {
+  BOOKING_OUTPUT_SCHEMA,
+  buildSummary,
+  buildSystemPrompt,
+  buildUserPrompt,
+  normalizeModelOutput,
+  type ModelBookingOutput,
+  type VoiceProperty,
+} from '../_shared/voiceBooking.ts'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-voice-token',
+}
+
+const DEFAULT_SOURCES = ['direct', 'kaspi', 'booking', 'airbnb', 'avito', 'cash', 'other']
+const MAX_TRANSCRIPT_LENGTH = 2000
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function resolveOwnerId(req: Request, adminClient: SupabaseClient): Promise<string | null> {
+  const voiceToken = req.headers.get('x-voice-token')?.trim()
+  if (voiceToken) {
+    const { data } = await adminClient
+      .from('voice_tokens')
+      .select('owner_id')
+      .eq('token_hash', await sha256Hex(voiceToken))
+      .maybeSingle()
+    return data?.owner_id ?? null
+  }
+
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader) return null
+  const callerClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+    global: { headers: { Authorization: authHeader } },
+  })
+  const { data, error } = await callerClient.auth.getUser()
+  return error || !data.user ? null : data.user.id
+}
+
+function todayIn(timeZone: string): { today: string; weekday: string } {
+  const now = new Date()
+  let zone = timeZone
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: zone })
+  } catch {
+    zone = 'Asia/Almaty'
+  }
+  return {
+    today: new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now),
+    weekday: new Intl.DateTimeFormat('ru-RU', { timeZone: zone, weekday: 'long' }).format(now),
+  }
+}
+
+async function extractBooking(params: {
+  transcript: string
+  today: string
+  weekday: string
+  properties: VoiceProperty[]
+  sources: string[]
+}): Promise<ModelBookingOutput> {
+  const client = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') })
+  const response = await client.beta.messages.create({
+    model: Deno.env.get('VOICE_BOOKING_MODEL') ?? 'claude-opus-5-5',
+    max_tokens: 4000,
+    betas: ['server-side-fallback-2026-07-01'],
+    // Re-runs a classifier-declined request on Anthropic's recommended model.
+    fallbacks: 'default',
+    // Latency-sensitive: the user is waiting on the Shortcut; extraction is easy.
+    output_config: {
+      effort: 'low',
+      format: { type: 'json_schema', schema: BOOKING_OUTPUT_SCHEMA },
+    },
+    system: buildSystemPrompt(),
+    messages: [{ role: 'user', content: buildUserPrompt(params) }],
+  })
+
+  if (response.stop_reason === 'refusal') throw new Error('Модель отказалась разбирать фразу')
+  if (response.stop_reason === 'max_tokens') throw new Error('Ответ модели обрезан')
+  const text = response.content.find(block => block.type === 'text')
+  if (!text || text.type !== 'text') throw new Error('Пустой ответ модели')
+  return JSON.parse(text.text) as ModelBookingOutput
+}
+
+Deno.serve(async req => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+  if (req.method !== 'POST') {
+    return jsonResponse({ error: 'POST only' }, 405)
+  }
+
+  try {
+    const body = await req.json().catch(() => ({}))
+    const transcript = typeof body.text === 'string' ? body.text.trim().slice(0, MAX_TRANSCRIPT_LENGTH) : ''
+    if (!transcript) {
+      return jsonResponse({ error: 'Пустой текст', summary: 'Ничего не услышал — попробуйте ещё раз.' }, 400)
+    }
+
+    const adminClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    const ownerId = await resolveOwnerId(req, adminClient)
+    if (!ownerId) {
+      return jsonResponse({ error: 'Not authenticated', summary: 'Токен не подошёл. Создайте новый в Настройках.' }, 401)
+    }
+
+    const [{ data: propertiesData, error: propertiesError }, { data: settings }] = await Promise.all([
+      adminClient
+        .from('properties')
+        .select('id, name, base_price, voice_aliases, is_active')
+        .eq('owner_id', ownerId)
+        .order('sort_order', { nullsFirst: false }),
+      adminClient.from('settings').select('timezone, booking_sources').eq('user_id', ownerId).maybeSingle(),
+    ])
+    if (propertiesError) throw propertiesError
+
+    const properties: VoiceProperty[] = (propertiesData ?? [])
+      .filter(p => p.is_active !== false)
+      .map(p => ({ id: p.id, name: p.name, base_price: p.base_price ?? 0, voice_aliases: p.voice_aliases ?? [] }))
+    const sources: string[] = settings?.booking_sources?.length ? settings.booking_sources : DEFAULT_SOURCES
+    const { today, weekday } = todayIn(settings?.timezone ?? 'Asia/Almaty')
+
+    const raw = await extractBooking({ transcript, today, weekday, properties, sources })
+    const parsed = normalizeModelOutput(raw, { transcript, properties, sources, today })
+
+    const hasDates = isIsoDate(parsed.check_in) && isIsoDate(parsed.check_out)
+    const windowFrom = hasDates ? addDaysIso(parsed.check_in!, -30) : today
+    const windowTo = hasDates ? addDaysIso(parsed.check_out!, 30) : addDaysIso(today, 60)
+
+    const [{ data: bookingsData, error: bookingsError }, knownPhone] = await Promise.all([
+      adminClient
+        .from('bookings')
+        .select('id, property_id, check_in, check_out, guest_name')
+        .eq('owner_id', ownerId)
+        .gte('check_out', windowFrom)
+        .lte('check_in', windowTo),
+      parsed.guest_name && !parsed.guest_phone
+        ? adminClient
+          .from('bookings')
+          .select('guest_phone')
+          .eq('owner_id', ownerId)
+          .ilike('guest_name', parsed.guest_name.replace(/[%_]/g, ''))
+          .not('guest_phone', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .then(r => r.data?.[0]?.guest_phone ?? null)
+        : Promise.resolve(null),
+    ])
+    if (bookingsError) throw bookingsError
+    parsed.known_guest_phone = knownPhone
+
+    const availability = buildAvailabilityReport({
+      bookings: bookingsData ?? [],
+      properties,
+      propertyId: parsed.property_id,
+      checkIn: parsed.check_in,
+      checkOut: parsed.check_out,
+      today,
+    })
+
+    const { data: draft, error: draftError } = await adminClient
+      .from('voice_booking_drafts')
+      .insert({ owner_id: ownerId, transcript, parsed, availability })
+      .select('id')
+      .single()
+    if (draftError) throw draftError
+
+    const appUrl = (Deno.env.get('APP_URL') ?? '').replace(/\/$/, '')
+    const summary = buildSummary(parsed, availability, properties)
+
+    return jsonResponse({
+      draft_id: draft.id,
+      open_url: appUrl ? `${appUrl}/?voice_draft=${draft.id}` : null,
+      summary,
+      parsed,
+      availability,
+    })
+  } catch (err) {
+    console.error('voice-booking failed', err)
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return jsonResponse({ error: message, summary: `Не получилось разобрать бронь: ${message}` }, 500)
+  }
+})

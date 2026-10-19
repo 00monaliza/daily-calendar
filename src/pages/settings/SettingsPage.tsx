@@ -3,6 +3,7 @@ import { useSettings, useUpdateSettings } from '@/entities/settings/queries'
 import { Toggle } from '@/shared/ui/Toggle'
 import type { SettingsPatch } from '@/entities/settings/types'
 import { Check } from '@phosphor-icons/react'
+import { VoiceBookingSection } from './VoiceBookingSection'
 
 const TIMEZONES = [
   { value: 'UTC', label: 'UTC (0:00)' },
@@ -170,6 +171,8 @@ export function SettingsPage() {
           description="Уменьшенная высота строк в календаре"
         />
       </div>
+
+      <VoiceBookingSection />
     </div>
   )
 }

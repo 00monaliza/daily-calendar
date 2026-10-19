@@ -25,6 +25,7 @@ function PropertyModal({
   const [basePrice, setBasePrice] = useState(property?.base_price ?? 0)
   const [description, setDescription] = useState(property?.description ?? '')
   const [color, setColor] = useState(property?.color ?? '#376E6F')
+  const [voiceAliases, setVoiceAliases] = useState((property?.voice_aliases ?? []).join(', '))
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -39,6 +40,11 @@ function PropertyModal({
       description: description || null,
       color,
       is_active: property?.is_active ?? true,
+    }
+    const aliases = voiceAliases.split(',').map(a => a.trim().toLowerCase()).filter(Boolean)
+    // Only send the column when it exists (migration 007) or the user typed aliases.
+    if (property?.voice_aliases !== undefined || aliases.length > 0) {
+      data.voice_aliases = Array.from(new Set(aliases))
     }
     try {
       if (property) {
@@ -114,6 +120,16 @@ function PropertyModal({
             />
           ))}
         </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Голосовые названия</label>
+        <input
+          value={voiceAliases}
+          onChange={e => setVoiceAliases(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          placeholder="инжу 12, арена 12, двенадцатая"
+        />
+        <p className="mt-1 text-xs text-gray-500">Через запятую — как вы называете квартиру вслух при голосовой брони.</p>
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>

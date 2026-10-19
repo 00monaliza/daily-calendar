@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   format,
   startOfMonth,
@@ -17,6 +17,9 @@ import { SummaryBar } from '@/widgets/summary-bar/SummaryBar'
 import { ChessGrid } from '@/widgets/chess-grid/ChessGrid'
 import { BookingModal } from '@/widgets/booking-modal/BookingModal'
 import type { Booking } from '@/entities/booking/types'
+import { usePendingVoiceDrafts, useVoiceDraft } from '@/entities/voice-booking/queries'
+import type { VoiceBookingDraft } from '@/entities/voice-booking/types'
+import { formatRange } from '@/shared/lib/voiceBooking'
 import type { Property } from '@/entities/property/types'
 import { useIsMobile } from '@/shared/hooks/useIsMobile'
 import { MobileChessGrid } from '@/widgets/chess-grid/MobileChessGrid'
@@ -140,8 +143,13 @@ export function ChessPage() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
   const [prefillDate, setPrefillDate] = useState<string | null>(null)
   const [prefillPropertyId, setPrefillPropertyId] = useState<string | null>(null)
+  const [voiceDraft, setVoiceDraft] = useState<VoiceBookingDraft | null>(null)
 
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const voiceDraftId = searchParams.get('voice_draft')
+  const { data: linkedVoiceDraft } = useVoiceDraft(voiceDraftId)
+  const { data: pendingVoiceDrafts = [] } = usePendingVoiceDrafts(user?.id)
 
   const { data: propertiesData } = useProperties(user?.id)
   const { mutate: reorderProperties } = useReorderProperties()
@@ -209,6 +217,7 @@ export function ChessPage() {
     setPrefillDate(date)
     setPrefillPropertyId(propertyId)
     setSelectedBooking(null)
+    setVoiceDraft(null)
     setModalOpen(true)
   }
 
@@ -216,8 +225,35 @@ export function ChessPage() {
     setSelectedBooking(booking)
     setPrefillDate(null)
     setPrefillPropertyId(null)
+    setVoiceDraft(null)
     setModalOpen(true)
   }
+
+  function openVoiceDraft(draft: VoiceBookingDraft) {
+    setSelectedBooking(null)
+    setPrefillDate(null)
+    setPrefillPropertyId(null)
+    setVoiceDraft(draft)
+    setModalOpen(true)
+  }
+
+  // Opened from the iOS Shortcut via /?voice_draft=<id>. The param drives the
+  // modal directly and is dropped on close, so a reload doesn't reopen it.
+  const urlVoiceDraft =
+    voiceDraftId && linkedVoiceDraft?.status === 'pending' && properties.length > 0 ? linkedVoiceDraft : null
+
+  function closeModal() {
+    setModalOpen(false)
+    if (voiceDraftId) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        next.delete('voice_draft')
+        return next
+      }, { replace: true })
+    }
+  }
+
+  const latestVoiceDraft = pendingVoiceDrafts[0] ?? null
 
   function handleReorder(ids: string[]) {
     setOrderedPropertyIds(ids)
@@ -227,6 +263,23 @@ export function ChessPage() {
   return (
     <div className="flex flex-col h-full">
       <SummaryBar bookings={bookings} properties={properties} from={from} to={to} />
+
+      {latestVoiceDraft && !modalOpen && !urlVoiceDraft && (
+        <button
+          type="button"
+          onClick={() => openVoiceDraft(latestVoiceDraft)}
+          className="mx-3 mt-2 flex items-center justify-between gap-3 rounded-xl border border-[#376E6F]/20 bg-[#376E6F]/5 px-3 py-2 text-left text-sm text-[#1C3334] hover:bg-[#376E6F]/10"
+        >
+          <span className="min-w-0 truncate">
+            🎤 {pendingVoiceDrafts.length > 1 ? `${pendingVoiceDrafts.length} голосовые брони ждут` : 'Голосовая бронь ждёт'} подтверждения
+            {latestVoiceDraft.parsed.guest_name ? `: ${latestVoiceDraft.parsed.guest_name}` : ''}
+            {latestVoiceDraft.parsed.check_in && latestVoiceDraft.parsed.check_out
+              ? `, ${formatRange(latestVoiceDraft.parsed.check_in, latestVoiceDraft.parsed.check_out)}`
+              : ''}
+          </span>
+          <span className="flex-shrink-0 font-medium text-[#376E6F]">Открыть</span>
+        </button>
+      )}
 
       {/* Teleport date picker */}
       <div className="flex items-center gap-2 px-4 py-2.5 bg-white border-b border-gray-200">
@@ -305,13 +358,15 @@ export function ChessPage() {
         />
       )}
 
-      {modalOpen && (
+      {(modalOpen || urlVoiceDraft) && (
         <BookingModal
-          booking={selectedBooking}
+          key={urlVoiceDraft && !modalOpen ? urlVoiceDraft.id : 'manual'}
+          booking={urlVoiceDraft && !modalOpen ? null : selectedBooking}
           properties={properties}
-          prefillDate={prefillDate}
-          prefillPropertyId={prefillPropertyId}
-          onClose={() => setModalOpen(false)}
+          prefillDate={urlVoiceDraft && !modalOpen ? null : prefillDate}
+          prefillPropertyId={urlVoiceDraft && !modalOpen ? null : prefillPropertyId}
+          voiceDraft={urlVoiceDraft && !modalOpen ? urlVoiceDraft : voiceDraft}
+          onClose={closeModal}
         />
       )}
     </div>

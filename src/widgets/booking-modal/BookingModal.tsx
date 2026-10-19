@@ -2,8 +2,12 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { differenceInDays, format, addDays, parseISO } from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
 import { toast } from '@/shared/ui/Toast'
-import { useCreateBooking, useUpdateBooking, useDeleteBooking } from '@/entities/booking/queries'
+import { useBookings, useCreateBooking, useUpdateBooking, useDeleteBooking } from '@/entities/booking/queries'
 import type { Booking, PaymentStatus, BookingSource } from '@/entities/booking/types'
+import { useSetVoiceDraftStatus } from '@/entities/voice-booking/queries'
+import type { VoiceBookingDraft } from '@/entities/voice-booking/types'
+import { addDaysIso, buildAvailabilityReport, isIsoDate } from '@/shared/lib/bookingAvailability'
+import { formatRange, pluralNights, type VoiceField } from '@/shared/lib/voiceBooking'
 import { useSettings, useUpdateSettings } from '@/entities/settings/queries'
 import { useGuests } from '@/entities/guest/queries'
 
@@ -17,6 +21,8 @@ interface Props {
   properties: Property[]
   prefillDate: string | null
   prefillPropertyId: string | null
+  /** A dictated draft from the iOS Shortcut; only used for new bookings. */
+  voiceDraft?: VoiceBookingDraft | null
   onClose: () => void
 }
 
@@ -77,7 +83,9 @@ function WhatsAppIcon() {
   )
 }
 
-export function BookingModal({ booking, properties, prefillDate, prefillPropertyId, onClose }: Props) {
+const UNCERTAIN_FIELD_CLASS = ' border-amber-400 bg-amber-50'
+
+export function BookingModal({ booking, properties, prefillDate, prefillPropertyId, voiceDraft, onClose }: Props) {
   const isMobile = useIsMobile()
   const { user } = useUser()
   const { data: settings } = useSettings()
@@ -85,40 +93,73 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   const createBooking = useCreateBooking()
   const updateBooking = useUpdateBooking()
   const deleteBooking = useDeleteBooking()
+  const setVoiceDraftStatus = useSetVoiceDraftStatus()
   const { data: guestHistory } = useGuests(user?.id)
 
+  const voice = booking ? null : voiceDraft?.parsed ?? null
+  const today = format(new Date(), 'yyyy-MM-dd')
   const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd')
-  const defaultCheckIn = prefillDate ?? format(new Date(), 'yyyy-MM-dd')
-  const defaultCheckOut = prefillDate ? format(addDays(parseISO(prefillDate), 1), 'yyyy-MM-dd') : tomorrow
-  const defaultProperty = prefillPropertyId ?? properties[0]?.id ?? ''
+  const defaultCheckIn = voice?.check_in ?? prefillDate ?? today
+  const defaultCheckOut = voice?.check_out
+    ?? (voice?.check_in || prefillDate ? format(addDays(parseISO(defaultCheckIn), 1), 'yyyy-MM-dd') : tomorrow)
+  const defaultProperty = voice?.property_id ?? prefillPropertyId ?? properties[0]?.id ?? ''
   const initialNights = differenceInDays(parseISO(booking?.check_out ?? defaultCheckOut), parseISO(booking?.check_in ?? defaultCheckIn))
   const defaultPropertyBasePrice = properties.find(p => p.id === (booking?.property_id ?? defaultProperty))?.base_price ?? 0
+  const voiceTotal = voice
+    ? voice.total_price ?? (voice.price_per_night ?? defaultPropertyBasePrice) * Math.max(0, initialNights)
+    : 0
+  const voicePrepayment = voice?.prepayment ?? 0
 
   const [propertyId, setPropertyId] = useState(booking?.property_id ?? defaultProperty)
   const [checkIn, setCheckIn] = useState(booking?.check_in ?? defaultCheckIn)
-  const [checkInTime, setCheckInTime] = useState(booking?.check_in_time ?? '14:00')
+  const [checkInTime, setCheckInTime] = useState(booking?.check_in_time ?? voice?.check_in_time ?? '14:00')
   const [checkOut, setCheckOut] = useState(booking?.check_out ?? defaultCheckOut)
-  const [checkOutTime, setCheckOutTime] = useState(booking?.check_out_time ?? '12:00')
-  const [guestName, setGuestName] = useState(booking?.guest_name ?? '')
-  const [guestPhone, setGuestPhone] = useState(booking?.guest_phone ?? '')
-  const [totalPrice, setTotalPrice] = useState(booking?.total_price ?? 0)
-  const [prepayment, setPrepayment] = useState(booking?.prepayment ?? 0)
+  const [checkOutTime, setCheckOutTime] = useState(booking?.check_out_time ?? voice?.check_out_time ?? '12:00')
+  const [guestName, setGuestName] = useState(booking?.guest_name ?? voice?.guest_name ?? '')
+  const [guestPhone, setGuestPhone] = useState(booking?.guest_phone ?? voice?.guest_phone ?? voice?.known_guest_phone ?? '')
+  const [totalPrice, setTotalPrice] = useState(booking?.total_price ?? voiceTotal)
+  const [prepayment, setPrepayment] = useState(booking?.prepayment ?? voicePrepayment)
   const [nightlyPrice, setNightlyPrice] = useState(
     booking
       ? (initialNights > 0 ? booking.total_price / initialNights : 0)
-      : defaultPropertyBasePrice,
+      : voice && initialNights > 0 ? voiceTotal / initialNights : defaultPropertyBasePrice,
   )
-  const [remainingAmount, setRemainingAmount] = useState(Math.max(0, (booking?.total_price ?? 0) - (booking?.prepayment ?? 0)))
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(booking?.payment_status ?? 'waiting')
-  const [source, setSource] = useState<BookingSource>(booking?.source ?? DEFAULT_SOURCES[0])
+  const [remainingAmount, setRemainingAmount] = useState(
+    booking
+      ? Math.max(0, booking.total_price - booking.prepayment)
+      : Math.max(0, voiceTotal - voicePrepayment),
+  )
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(booking?.payment_status ?? voice?.payment_status ?? 'waiting')
+  const [source, setSource] = useState<BookingSource>(booking?.source ?? voice?.source ?? DEFAULT_SOURCES[0])
   const [sourcesDraft, setSourcesDraft] = useState<BookingSource[] | null>(null)
   const [newSource, setNewSource] = useState('')
-  const [comment, setComment] = useState(booking?.comment ?? '')
+  const [comment, setComment] = useState(booking?.comment ?? voice?.comment ?? '')
   const [bookingColor, setBookingColor] = useState(booking?.color ?? BOOKING_COLORS[0])
   const [phoneCopyState, setPhoneCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
   const phoneCopyTimeoutRef = useRef<number | null>(null)
 
   const nights = differenceInDays(parseISO(checkOut), parseISO(checkIn))
+  const uncertain = new Set<VoiceField>(voice?.uncertain ?? [])
+  const fieldClass = (field: VoiceField) => (uncertain.has(field) ? UNCERTAIN_FIELD_CLASS : '')
+
+  // Live availability for whatever dates/property are currently in the form.
+  const datesValid = isIsoDate(checkIn) && isIsoDate(checkOut) && checkIn < checkOut
+  const availabilityFrom = datesValid ? addDaysIso(checkIn, -30) : today
+  const availabilityTo = datesValid ? addDaysIso(checkOut, 30) : addDaysIso(today, 60)
+  const { data: nearbyBookings, isFetching: availabilityLoading } = useBookings(user?.id, availabilityFrom, availabilityTo)
+  const availability = useMemo(
+    () => buildAvailabilityReport({
+      bookings: nearbyBookings ?? [],
+      properties,
+      propertyId: propertyId || null,
+      checkIn: datesValid ? checkIn : null,
+      checkOut: datesValid ? checkOut : null,
+      today,
+      excludeBookingId: booking?.id ?? null,
+    }),
+    [nearbyBookings, properties, propertyId, checkIn, checkOut, datesValid, today, booking?.id],
+  )
+  const propertyName = (id: string) => properties.find(p => p.id === id)?.name ?? ''
   const savedSources = Array.from(
     new Set(
       (settings?.booking_sources ?? [])
@@ -202,6 +243,24 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
     setCheckOut(nextCheckOut)
     const nextNights = differenceInDays(parseISO(nextCheckOut), parseISO(checkIn))
     recalcByNightly(nightlyPrice, nextNights, prepayment)
+  }
+
+  function applyDates(nextCheckIn: string, nextCheckOut: string) {
+    setCheckIn(nextCheckIn)
+    setCheckOut(nextCheckOut)
+    recalcByNightly(nightlyPrice, differenceInDays(parseISO(nextCheckOut), parseISO(nextCheckIn)), prepayment)
+  }
+
+  // A dictated price was agreed with the guest, so switching property from a
+  // chip keeps it; otherwise behave like the select and use the base price.
+  function pickProperty(nextPropertyId: string) {
+    if (voice?.total_price != null) setPropertyId(nextPropertyId)
+    else handlePropertyChange(nextPropertyId)
+  }
+
+  async function handleDismissVoiceDraft() {
+    if (voiceDraft) await setVoiceDraftStatus.mutateAsync({ id: voiceDraft.id, status: 'dismissed' })
+    onClose()
   }
 
   function handleNightlyPriceChange(rawValue: string) {
@@ -327,6 +386,13 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
       return
     }
 
+    if (availability.status === 'busy') {
+      const clash = availability.conflicts
+        .map(c => `${c.guest_name ?? 'бронь'} (${formatRange(c.check_in, c.check_out)})`)
+        .join(', ')
+      if (!confirm(`Даты пересекаются с: ${clash}. Всё равно сохранить?`)) return
+    }
+
     const data = {
       owner_id: user.id,
       property_id: propertyId,
@@ -348,6 +414,10 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
       await updateBooking.mutateAsync({ id: booking.id, data })
     } else {
       await createBooking.mutateAsync(data)
+      if (voiceDraft) {
+        // The booking is saved; a failed status update only leaves the banner up.
+        await setVoiceDraftStatus.mutateAsync({ id: voiceDraft.id, status: 'used' }).catch(() => undefined)
+      }
     }
     onClose()
   }
@@ -362,13 +432,38 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
 
   const formContent = (
     <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
+      {voice && voiceDraft && (
+        <div className="rounded-xl border border-[#376E6F]/20 bg-[#376E6F]/5 px-3 py-2.5 text-sm space-y-2">
+          <div className="text-xs font-medium text-[#376E6F]">🎤 Надиктовано</div>
+          <div className="text-gray-700 italic">«{voiceDraft.transcript}»</div>
+          {uncertain.size > 0 && (
+            <div className="text-xs text-amber-700">Проверьте поля, подсвеченные жёлтым.</div>
+          )}
+          {voice.property_candidates.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-gray-600">Какая квартира?</span>
+              {[voice.property_id, ...voice.property_candidates].filter((id): id is string => !!id).map(id => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => pickProperty(id)}
+                  className={`rounded-full border px-2.5 py-1 text-xs ${propertyId === id ? 'border-[#376E6F] bg-[#376E6F] text-white' : 'border-gray-300 bg-white text-gray-700'}`}
+                >
+                  {propertyName(id)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Квартира *</label>
         <select
           required
           value={propertyId}
           onChange={e => handlePropertyChange(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('property_id')}`}
         >
           {properties.map(p => (
             <option key={p.id} value={p.id}>{p.name}</option>
@@ -385,7 +480,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
               required
               value={checkIn}
               onChange={e => handleCheckInChange(e.target.value)}
-              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+              className={`flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('check_in')}`}
             />
             <input
               type="time"
@@ -404,7 +499,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
               value={checkOut}
               min={checkIn}
               onChange={e => handleCheckOutChange(e.target.value)}
-              className="flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+              className={`flex-1 min-w-0 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('check_out')}`}
             />
             <input
               type="time"
@@ -420,6 +515,65 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
         <div className="text-xs text-gray-500">{nights} {nights === 1 ? 'ночь' : nights < 5 ? 'ночи' : 'ночей'}</div>
       )}
 
+      {datesValid && propertyId && !availabilityLoading && availability.status === 'busy' && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm space-y-2">
+          <div className="font-medium text-red-700">
+            ⛔ Занято: {availability.conflicts.map(c => `${c.guest_name ?? 'бронь'} ${formatRange(c.check_in, c.check_out)}`).join('; ')}
+          </div>
+          {availability.alternatives.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-gray-600">Свободно рядом:</span>
+              {availability.alternatives.map(a => (
+                <button
+                  key={a.check_in}
+                  type="button"
+                  onClick={() => applyDates(a.check_in, a.check_out)}
+                  className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  {formatRange(a.check_in, a.check_out)}
+                </button>
+              ))}
+            </div>
+          )}
+          {availability.free_properties.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-gray-600">Свободны на эти даты:</span>
+              {availability.free_properties.map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => pickProperty(p.id)}
+                  className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!booking && datesValid && propertyId && !availabilityLoading && availability.status === 'free' && (
+        <div className="text-xs font-medium text-emerald-700">✅ Свободно на эти даты</div>
+      )}
+
+      {voice && (uncertain.has('check_in') || uncertain.has('check_out')) && availability.free_windows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-gray-600">Свободные окна:</span>
+          {availability.free_windows.slice(0, 4).map(w => (
+            <button
+              key={w.check_in}
+              type="button"
+              onClick={() => applyDates(w.check_in, addDaysIso(w.check_in, Math.min(nights > 0 ? nights : 1, w.nights)))}
+              className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+              title={pluralNights(w.nights)}
+            >
+              {formatRange(w.check_in, w.check_out)}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Имя гостя *</label>
         <input
@@ -428,7 +582,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
           value={guestName}
           onChange={e => handleGuestNameChange(e.target.value)}
           list="guest-name-options"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('guest_name')}`}
           placeholder="Иванов Иван"
         />
         <datalist id="guest-name-options">
@@ -519,7 +673,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
             min={0}
             value={totalPrice}
             onChange={e => handleTotalPriceChange(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+            className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('total_price')}`}
           />
           {totalPrice > 0 && (
             <div className="mt-1 text-xs text-gray-500">
@@ -537,7 +691,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
             min={0}
             value={prepayment}
             onChange={e => handlePrepaymentChange(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+            className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('prepayment')}`}
           />
         </div>
         <div>
@@ -653,6 +807,16 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
       </div>
 
       <div className="flex gap-3 pt-2">
+        {voice && voiceDraft && (
+          <button
+            type="button"
+            onClick={handleDismissVoiceDraft}
+            disabled={isLoading || setVoiceDraftStatus.isPending}
+            className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            Отклонить
+          </button>
+        )}
         {booking && (
           <button
             type="button"
