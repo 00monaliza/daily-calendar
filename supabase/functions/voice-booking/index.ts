@@ -209,7 +209,7 @@ Deno.serve(async req => {
     if (draftError) throw draftError
 
     const appUrl = (Deno.env.get('APP_URL') ?? '').replace(/\/$/, '')
-    const summary = buildSummary(parsed, availability, properties)
+    const summary = buildSummary(parsed, availability, properties, transcript)
 
     // Only the summary and link: the full draft (with a phone looked up from
     // guest history) stays behind RLS for the signed-in app, so a leaked voice

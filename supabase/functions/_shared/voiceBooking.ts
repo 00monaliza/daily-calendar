@@ -342,9 +342,12 @@ export function buildSummary(
   parsed: VoiceBookingParsed,
   availability: AvailabilityReport,
   properties: VoiceProperty[],
+  transcript?: string,
 ): string {
   const nameOf = (id: string) => properties.find(p => p.id === id)?.name ?? '?'
   const lines: string[] = []
+  // What the phone actually sent: makes a bad dictation obvious at a glance.
+  if (transcript) lines.push(`🎙 «${transcript.length > 120 ? `${transcript.slice(0, 120)}…` : transcript}»`)
 
   if (parsed.property_id) {
     lines.push(`🏠 ${nameOf(parsed.property_id)}`)

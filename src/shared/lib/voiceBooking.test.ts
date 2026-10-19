@@ -177,7 +177,8 @@ describe('buildSummary', () => {
       checkOut: parsed.check_out,
       today: '2026-10-19',
     })
-    const summary = buildSummary(parsed, availability, properties)
+    const summary = buildSummary(parsed, availability, properties, '12 Айгерим с 11 по 12 ноября 18 тысяч')
+    expect(summary.split('\n')[0]).toBe('🎙 «12 Айгерим с 11 по 12 ноября 18 тысяч»')
     expect(summary).toContain('Инжу Арена 12')
     expect(summary).toContain('11 ноября – 12 ноября (1 ночь)')
     expect(summary).toContain('⛔ Занято: Олжас 10 ноября – 13 ноября')
