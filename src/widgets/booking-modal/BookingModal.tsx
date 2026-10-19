@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { differenceInDays, format, addDays, parseISO } from 'date-fns'
 import { useUser } from '@/features/auth/useUser'
 import { toast } from '@/shared/ui/Toast'
-import { useBookings, useCreateBooking, useUpdateBooking, useDeleteBooking } from '@/entities/booking/queries'
+import { useBookingsForAvailability, useCreateBooking, useUpdateBooking, useDeleteBooking } from '@/entities/booking/queries'
 import type { Booking, PaymentStatus, BookingSource } from '@/entities/booking/types'
-import { useSetVoiceDraftStatus } from '@/entities/voice-booking/queries'
+import { useClaimVoiceDraft, useSetVoiceDraftStatus } from '@/entities/voice-booking/queries'
 import type { VoiceBookingDraft } from '@/entities/voice-booking/types'
 import { addDaysIso, buildAvailabilityReport, isIsoDate } from '@/shared/lib/bookingAvailability'
 import { formatRange, pluralNights, type VoiceField } from '@/shared/lib/voiceBooking'
@@ -94,6 +94,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   const updateBooking = useUpdateBooking()
   const deleteBooking = useDeleteBooking()
   const setVoiceDraftStatus = useSetVoiceDraftStatus()
+  const claimVoiceDraft = useClaimVoiceDraft()
   const { data: guestHistory } = useGuests(user?.id)
 
   const voice = booking ? null : voiceDraft?.parsed ?? null
@@ -102,7 +103,9 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   const defaultCheckIn = voice?.check_in ?? prefillDate ?? today
   const defaultCheckOut = voice?.check_out
     ?? (voice?.check_in || prefillDate ? format(addDays(parseISO(defaultCheckIn), 1), 'yyyy-MM-dd') : tomorrow)
-  const defaultProperty = voice?.property_id ?? prefillPropertyId ?? properties[0]?.id ?? ''
+  // A draft that didn't resolve the flat leaves the (required) select empty
+  // instead of silently picking the first property.
+  const defaultProperty = voice ? voice.property_id ?? '' : prefillPropertyId ?? properties[0]?.id ?? ''
   const initialNights = differenceInDays(parseISO(booking?.check_out ?? defaultCheckOut), parseISO(booking?.check_in ?? defaultCheckIn))
   const defaultPropertyBasePrice = properties.find(p => p.id === (booking?.property_id ?? defaultProperty))?.base_price ?? 0
   const voiceTotal = voice
@@ -140,24 +143,30 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
 
   const nights = differenceInDays(parseISO(checkOut), parseISO(checkIn))
   const uncertain = new Set<VoiceField>(voice?.uncertain ?? [])
+  // A phone taken from an earlier booking with the same name is a guess too.
+  if (voice && !voice.guest_phone && voice.known_guest_phone) uncertain.add('guest_phone')
   const fieldClass = (field: VoiceField) => (uncertain.has(field) ? UNCERTAIN_FIELD_CLASS : '')
 
   // Live availability for whatever dates/property are currently in the form.
   const datesValid = isIsoDate(checkIn) && isIsoDate(checkOut) && checkIn < checkOut
   const availabilityFrom = datesValid ? addDaysIso(checkIn, -30) : today
   const availabilityTo = datesValid ? addDaysIso(checkOut, 30) : addDaysIso(today, 60)
-  const { data: nearbyBookings, isFetching: availabilityLoading } = useBookings(user?.id, availabilityFrom, availabilityTo)
+  const availabilityQuery = useBookingsForAvailability(user?.id, availabilityFrom, availabilityTo)
+  // Only a successful lookup for the current range may report "free".
+  const availabilityReady = availabilityQuery.isSuccess
+  const nearbyBookings = availabilityQuery.data
+  const activeProperties = useMemo(() => properties.filter(p => p.is_active !== false), [properties])
   const availability = useMemo(
     () => buildAvailabilityReport({
       bookings: nearbyBookings ?? [],
-      properties,
+      properties: activeProperties,
       propertyId: propertyId || null,
       checkIn: datesValid ? checkIn : null,
       checkOut: datesValid ? checkOut : null,
       today,
       excludeBookingId: booking?.id ?? null,
     }),
-    [nearbyBookings, properties, propertyId, checkIn, checkOut, datesValid, today, booking?.id],
+    [nearbyBookings, activeProperties, propertyId, checkIn, checkOut, datesValid, today, booking?.id],
   )
   const propertyName = (id: string) => properties.find(p => p.id === id)?.name ?? ''
   const savedSources = Array.from(
@@ -259,8 +268,13 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
   }
 
   async function handleDismissVoiceDraft() {
-    if (voiceDraft) await setVoiceDraftStatus.mutateAsync({ id: voiceDraft.id, status: 'dismissed' })
-    onClose()
+    if (!voiceDraft) return
+    try {
+      await setVoiceDraftStatus.mutateAsync({ id: voiceDraft.id, status: 'dismissed' })
+      onClose()
+    } catch {
+      toast.error('Не удалось отклонить черновик, попробуйте ещё раз')
+    }
   }
 
   function handleNightlyPriceChange(rawValue: string) {
@@ -386,6 +400,15 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
       return
     }
 
+    if (datesValid && propertyId && !availabilityReady) {
+      if (availabilityQuery.isError) {
+        if (!confirm('Не удалось проверить занятость. Сохранить без проверки?')) return
+      } else {
+        toast.error('Проверяем занятость, нажмите «Сохранить» ещё раз через секунду')
+        return
+      }
+    }
+
     if (availability.status === 'busy') {
       const clash = availability.conflicts
         .map(c => `${c.guest_name ?? 'бронь'} (${formatRange(c.check_in, c.check_out)})`)
@@ -410,25 +433,42 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
       color: bookingColor,
     }
 
-    if (booking) {
-      await updateBooking.mutateAsync({ id: booking.id, data })
-    } else {
-      await createBooking.mutateAsync(data)
-      if (voiceDraft) {
-        // The booking is saved; a failed status update only leaves the banner up.
-        await setVoiceDraftStatus.mutateAsync({ id: voiceDraft.id, status: 'used' }).catch(() => undefined)
+    try {
+      if (booking) {
+        await updateBooking.mutateAsync({ id: booking.id, data })
+      } else if (voiceDraft) {
+        // Claim first so a draft can produce at most one booking, even across tabs.
+        if (!(await claimVoiceDraft.mutateAsync(voiceDraft.id))) {
+          toast.error('Эта голосовая бронь уже сохранена')
+          onClose()
+          return
+        }
+        try {
+          await createBooking.mutateAsync(data)
+        } catch (err) {
+          await setVoiceDraftStatus.mutateAsync({ id: voiceDraft.id, status: 'pending' }).catch(() => undefined)
+          throw err
+        }
+      } else {
+        await createBooking.mutateAsync(data)
       }
+      onClose()
+    } catch {
+      toast.error('Не удалось сохранить бронь, попробуйте ещё раз')
     }
-    onClose()
   }
 
   async function handleDelete() {
     if (!booking || !confirm('Удалить бронь?')) return
-    await deleteBooking.mutateAsync(booking.id)
-    onClose()
+    try {
+      await deleteBooking.mutateAsync(booking.id)
+      onClose()
+    } catch {
+      toast.error('Не удалось удалить бронь, попробуйте ещё раз')
+    }
   }
 
-  const isLoading = createBooking.isPending || updateBooking.isPending || deleteBooking.isPending
+  const isLoading = createBooking.isPending || updateBooking.isPending || deleteBooking.isPending || claimVoiceDraft.isPending
 
   const formContent = (
     <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
@@ -465,6 +505,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
           onChange={e => handlePropertyChange(e.target.value)}
           className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('property_id')}`}
         >
+          {propertyId === '' && <option value="" disabled>Выберите квартиру</option>}
           {properties.map(p => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
@@ -486,7 +527,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
               type="time"
               value={checkInTime}
               onChange={e => setCheckInTime(e.target.value)}
-              className="w-20 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+              className={`w-20 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('check_in_time')}`}
             />
           </div>
         </div>
@@ -505,7 +546,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
               type="time"
               value={checkOutTime}
               onChange={e => setCheckOutTime(e.target.value)}
-              className="w-20 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+              className={`w-20 border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('check_out_time')}`}
             />
           </div>
         </div>
@@ -515,7 +556,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
         <div className="text-xs text-gray-500">{nights} {nights === 1 ? 'ночь' : nights < 5 ? 'ночи' : 'ночей'}</div>
       )}
 
-      {datesValid && propertyId && !availabilityLoading && availability.status === 'busy' && (
+      {datesValid && propertyId && availabilityReady && availability.status === 'busy' && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm space-y-2">
           <div className="font-medium text-red-700">
             ⛔ Занято: {availability.conflicts.map(c => `${c.guest_name ?? 'бронь'} ${formatRange(c.check_in, c.check_out)}`).join('; ')}
@@ -553,7 +594,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
         </div>
       )}
 
-      {!booking && datesValid && propertyId && !availabilityLoading && availability.status === 'free' && (
+      {!booking && datesValid && propertyId && availabilityReady && availability.status === 'free' && (
         <div className="text-xs font-medium text-emerald-700">✅ Свободно на эти даты</div>
       )}
 
@@ -598,7 +639,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
           type="tel"
           value={guestPhone}
           onChange={e => handleGuestPhoneChange(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('guest_phone')}`}
           placeholder="+7 777 000 00 00"
         />
         {/*
@@ -708,7 +749,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Статус оплаты</label>
-        <div className="flex rounded-lg overflow-hidden border border-gray-200">
+        <div className={`flex rounded-lg overflow-hidden border border-gray-200${fieldClass('payment_status')}`}>
           {([['waiting', 'Ожидает'], ['partial', 'Частично'], ['paid', 'Оплачено']] as const).map(([val, label]) => (
             <button
               key={val}
@@ -727,7 +768,7 @@ export function BookingModal({ booking, properties, prefillDate, prefillProperty
         <select
           value={currentSource}
           onChange={e => setSource(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]"
+          className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#376E6F]${fieldClass('source')}`}
         >
           {sources.map(s => (
             <option key={s} value={s}>{getSourceLabel(s)}</option>

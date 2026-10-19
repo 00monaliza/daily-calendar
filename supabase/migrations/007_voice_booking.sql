@@ -39,20 +39,52 @@ create policy "own_voice_drafts" on voice_booking_drafts
 -- там, где псевдонимы ещё не заданы, поэтому миграцию безопасно повторять.
 -- Квартиры называют короткими числами; диктовка iPhone пишет их то цифрами,
 -- то словами, поэтому заданы оба варианта.
+-- Только для владельца, у которого есть и «1509», и «2006», чтобы не задеть
+-- похожие названия («Весна», «Алматау») у других аккаунтов.
 update properties set voice_aliases = array['89', 'восемьдесят девять']
-where voice_aliases = '{}' and name ilike '%алматау%';
+where voice_aliases = '{}' and owner_id in (
+  select owner_id from properties where name ~ '(^|[^0-9])1509([^0-9]|$)'
+  intersect
+  select owner_id from properties where name ~ '(^|[^0-9])2006([^0-9]|$)'
+)
+  and name ilike '%алматау%';
 
 update properties set voice_aliases = array['12', 'двенадцать', 'двенадцатая']
-where voice_aliases = '{}' and name ~* 'инжу' and name ~ '(^|[^0-9])12([^0-9]|$)';
+where voice_aliases = '{}' and owner_id in (
+  select owner_id from properties where name ~ '(^|[^0-9])1509([^0-9]|$)'
+  intersect
+  select owner_id from properties where name ~ '(^|[^0-9])2006([^0-9]|$)'
+)
+  and name ~* 'инжу' and name ~ '(^|[^0-9])12([^0-9]|$)';
 
 update properties set voice_aliases = array['24', 'двадцать четыре', 'двадцать четвёртая']
-where voice_aliases = '{}' and name ~* 'инжу' and name ~ '(^|[^0-9])24([^0-9]|$)';
+where voice_aliases = '{}' and owner_id in (
+  select owner_id from properties where name ~ '(^|[^0-9])1509([^0-9]|$)'
+  intersect
+  select owner_id from properties where name ~ '(^|[^0-9])2006([^0-9]|$)'
+)
+  and name ~* 'инжу' and name ~ '(^|[^0-9])24([^0-9]|$)';
 
 update properties set voice_aliases = array['49', 'сорок девять']
-where voice_aliases = '{}' and name ilike '%весна%';
+where voice_aliases = '{}' and owner_id in (
+  select owner_id from properties where name ~ '(^|[^0-9])1509([^0-9]|$)'
+  intersect
+  select owner_id from properties where name ~ '(^|[^0-9])2006([^0-9]|$)'
+)
+  and name ilike '%весна%';
 
 update properties set voice_aliases = array['1509', 'пятнадцать ноль девять', 'тысяча пятьсот девять']
-where voice_aliases = '{}' and name ~ '(^|[^0-9])1509([^0-9]|$)';
+where voice_aliases = '{}' and owner_id in (
+  select owner_id from properties where name ~ '(^|[^0-9])1509([^0-9]|$)'
+  intersect
+  select owner_id from properties where name ~ '(^|[^0-9])2006([^0-9]|$)'
+)
+  and name ~ '(^|[^0-9])1509([^0-9]|$)';
 
 update properties set voice_aliases = array['2006', 'двадцать ноль шесть', 'две тысячи шесть']
-where voice_aliases = '{}' and name ~ '(^|[^0-9])2006([^0-9]|$)';
+where voice_aliases = '{}' and owner_id in (
+  select owner_id from properties where name ~ '(^|[^0-9])1509([^0-9]|$)'
+  intersect
+  select owner_id from properties where name ~ '(^|[^0-9])2006([^0-9]|$)'
+)
+  and name ~ '(^|[^0-9])2006([^0-9]|$)';

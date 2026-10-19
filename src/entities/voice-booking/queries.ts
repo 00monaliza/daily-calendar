@@ -2,6 +2,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { voiceBookingApi } from './api'
 import type { VoiceBookingDraft, VoiceDraftStatus } from './types'
 
+// Migration 007 not applied yet: treat as "no voice data" so the calendar
+// keeps working; every other error is surfaced as a query error.
+function isMissingTable(error: { code?: string } | null) {
+  return error?.code === '42P01' || error?.code === 'PGRST205'
+}
+
 export function useVoiceDraft(id: string | null) {
   return useQuery({
     queryKey: ['voice-draft', id],
@@ -21,8 +27,8 @@ export function usePendingVoiceDrafts(ownerId: string | undefined) {
     queryFn: async () => {
       if (!ownerId) return []
       const { data, error } = await voiceBookingApi.getPending(ownerId)
-      // Missing table (migration 007 not applied yet) should not break the calendar.
-      if (error) return []
+      if (isMissingTable(error)) return []
+      if (error) throw error
       return (data ?? []) as VoiceBookingDraft[]
     },
     enabled: !!ownerId,
@@ -48,10 +54,22 @@ export function useVoiceTokenStatus(ownerId: string | undefined) {
     queryFn: async () => {
       if (!ownerId) return null
       const { data, error } = await voiceBookingApi.hasToken(ownerId)
-      if (error) return null
+      if (isMissingTable(error)) return null
+      if (error) throw error
       return (data?.created_at as string | undefined) ?? null
     },
     enabled: !!ownerId,
+  })
+}
+
+export function useClaimVoiceDraft() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => voiceBookingApi.claim(id),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['voice-drafts-pending'] })
+      qc.invalidateQueries({ queryKey: ['voice-draft'] })
+    },
   })
 }
 

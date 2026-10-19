@@ -65,6 +65,7 @@ describe('suggestAlternatives', () => {
 
   it('never suggests dates before notBefore', () => {
     const result = suggestAlternatives(bookings, P1, '2026-11-12', '2026-11-14', 30, 3, null, '2026-11-11')
+    expect(result.length).toBeGreaterThan(0)
     expect(result.every(r => r.check_in >= '2026-11-11')).toBe(true)
   })
 })

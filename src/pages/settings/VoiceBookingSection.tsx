@@ -39,13 +39,13 @@ function CopyField({ label, value }: { label: string; value: string }) {
 
 export function VoiceBookingSection() {
   const { user } = useUser()
-  const { data: tokenCreatedAt } = useVoiceTokenStatus(user?.id)
+  const { data: tokenCreatedAt, isError: tokenStatusUnknown } = useVoiceTokenStatus(user?.id)
   const rotateToken = useRotateVoiceToken()
   const [token, setToken] = useState<string | null>(null)
 
   async function handleCreateToken() {
     if (!user) return
-    if (tokenCreatedAt && !confirm('Старый токен перестанет работать, и его нужно будет заменить в команде iPhone. Продолжить?')) return
+    if ((tokenCreatedAt || tokenStatusUnknown) && !confirm('Старый токен перестанет работать, и его нужно будет заменить в команде iPhone. Продолжить?')) return
     try {
       setToken(await rotateToken.mutateAsync(user.id))
     } catch {

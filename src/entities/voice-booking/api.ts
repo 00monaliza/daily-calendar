@@ -24,13 +24,27 @@ export const voiceBookingApi = {
       .select('*')
       .eq('owner_id', ownerId)
       .eq('status', 'pending')
-      // Older drafts are stale: the dictated "tomorrow" has likely passed.
-      .gte('created_at', new Date(Date.now() - 7 * 86_400_000).toISOString())
       .order('created_at', { ascending: false })
   },
 
   async setStatus(id: string, status: VoiceDraftStatus) {
-    return supabase.from('voice_booking_drafts').update({ status }).eq('id', id)
+    const { error } = await supabase.from('voice_booking_drafts').update({ status }).eq('id', id)
+    if (error) throw error
+  },
+
+  /**
+   * Atomically moves a draft from pending to used. Returns false when another
+   * tab already consumed it, so one draft can produce at most one booking.
+   */
+  async claim(id: string) {
+    const { data, error } = await supabase
+      .from('voice_booking_drafts')
+      .update({ status: 'used' })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .select('id')
+    if (error) throw error
+    return (data ?? []).length > 0
   },
 
   async hasToken(ownerId: string) {

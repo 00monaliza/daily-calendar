@@ -219,6 +219,7 @@ function toPhone(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const digits = value.replace(/\D/g, '')
   if (digits.length < 10) return null
+  if (digits.length === 10) return `+7${digits}` // national number without the trunk 8
   return digits.length === 11 && digits.startsWith('8') ? `+7${digits.slice(1)}` : `+${digits}`
 }
 

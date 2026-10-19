@@ -68,9 +68,15 @@ describe('matchPropertiesByAlias', () => {
     expect(matchPropertiesByAlias('на двадцать четыре Айгерим', properties)).toEqual(['inju24'])
   })
 
-  it('prefers the longest number', () => {
-    expect(matchPropertiesByAlias('двадцать четыре Айгерим', properties)).toEqual(['inju24'])
-    expect(matchPropertiesByAlias('две тысячи шесть, Олжас', properties)).toEqual(['k2006'])
+  it('prefers the longest number when shorter aliases of other flats also match', () => {
+    const competing: VoiceProperty[] = [
+      ...properties,
+      { id: 'k20', name: 'Двадцатка', base_price: 10000, voice_aliases: ['двадцать'] },
+      { id: 'k2', name: 'Двойка', base_price: 10000, voice_aliases: ['две'] },
+    ]
+    expect(matchPropertiesByAlias('двадцать четыре Айгерим', competing)).toEqual(['inju24'])
+    expect(matchPropertiesByAlias('две тысячи шесть, Олжас', competing)).toEqual(['k2006'])
+    expect(matchPropertiesByAlias('двадцать, Олжас', competing)).toEqual(['k20'])
   })
 
   it('still matches full names anywhere, ignoring case and punctuation', () => {
@@ -152,6 +158,8 @@ describe('normalizeModelOutput', () => {
     const parsed = normalizeModelOutput(output({ guest_phone: '8 777 123 45 67', check_in_time: '9.30' }), ctx)
     expect(parsed.guest_phone).toBe('+77771234567')
     expect(parsed.check_in_time).toBe('09:30')
+    expect(normalizeModelOutput(output({ guest_phone: '777 123 45 67' }), ctx).guest_phone).toBe('+77771234567')
+    expect(normalizeModelOutput(output({ guest_phone: '+7 777 123 45 67' }), ctx).guest_phone).toBe('+77771234567')
   })
 })
 
