@@ -92,7 +92,8 @@ async function extractBooking(params: {
   properties: VoiceProperty[]
   sources: string[]
 }): Promise<ModelBookingOutput> {
-  const client = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') })
+  // Trimmed: a pasted secret often carries a trailing newline or space.
+  const client = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')?.trim() })
   // Haiku by default: the user is waiting on the Shortcut and extraction is easy.
   const model = Deno.env.get('VOICE_BOOKING_MODEL') || 'claude-haiku-5-5'
   // Haiku has no server-side refusal fallback; larger models re-run a
@@ -220,6 +221,15 @@ Deno.serve(async req => {
     })
   } catch (err) {
     console.error('voice-booking failed', err)
+    if (err instanceof Anthropic.AuthenticationError) {
+      return jsonResponse({
+        error: 'Anthropic API key rejected',
+        summary: 'Ключ Anthropic не подошёл. Проверьте секрет ANTHROPIC_API_KEY в Supabase → Edge Functions → Secrets.',
+      }, 502)
+    }
+    if (err instanceof Anthropic.RateLimitError) {
+      return jsonResponse({ error: 'Anthropic rate limit', summary: 'Сервис распознавания перегружен, попробуйте через минуту.' }, 503)
+    }
     const message = err instanceof Error ? err.message : 'Unknown error'
     return jsonResponse({ error: message, summary: `Не получилось разобрать бронь: ${message}` }, 500)
   }
