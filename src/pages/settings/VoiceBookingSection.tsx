@@ -58,7 +58,7 @@ export function VoiceBookingSection() {
       <div className="space-y-1">
         <h2 className="text-base font-semibold text-gray-800">Голосовая бронь (iPhone)</h2>
         <p className="text-sm text-gray-500">
-          Нажали Action Button, продиктовали «Инжу 12, Айгерим, с 12 по 15 ноября, 45 тысяч, предоплата 10» —
+          Нажали Action Button, продиктовали «12, Айгерим, с 12 по 15 ноября, 45 тысяч, предоплата 10» —
           бронь появится в приложении на подтверждение, с проверкой занятости.
         </p>
       </div>

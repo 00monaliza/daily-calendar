@@ -108,6 +108,7 @@ export function buildSystemPrompt(): string {
     'Ты разбираешь надиктованную по-русски фразу о бронировании посуточной квартиры в Казахстане и возвращаешь JSON по схеме.',
     'Текст получен диктовкой iPhone: в нём бывают ошибки распознавания, числа словами, нет знаков препинания.',
     'Правила:',
+    '- Квартиры называют короткими числами (например 12, 24, 89, 1509), обычно первым словом фразы. Число в начале фразы — это квартира; не путай его с датами ("с 12 по 15") и суммами.',
     '- Квартиру выбирай только из переданного списка по названию или голосовым псевдонимам; верни её id. Если подходит несколько, верни property_id = null и перечисли их id в property_candidates. Если ничего не подходит, null.',
     '- Даты возвращай в формате YYYY-MM-DD. Относительные даты ("завтра", "в пятницу", "с 12 по 15") считай от сегодняшней даты; месяц без указания — ближайший будущий, где это число ещё не прошло. Год не называют — бери ближайший будущий.',
     '- "С 12 по 15" означает заезд 12-го и выезд 15-го. Если названо число ночей ("на три ночи"), заполни nights, а check_out можно оставить null.',
@@ -151,18 +152,43 @@ export function normalizeForMatch(value: string): string {
     .trim()
 }
 
+const NUMBER_WORD_STEMS = [
+  'ноль', 'один', 'одн', 'два', 'две', 'втор', 'три', 'трет', 'четыр', 'четв', 'пят', 'шест', 'сем', 'седьм',
+  'восем', 'восьм', 'девят', 'десят', 'сорок', 'девяност', 'сто', 'тысяч',
+]
+
+/** "12", "1509", "двадцать четыре", "двенадцатая" — names that also look like dates or sums. */
+export function isNumericTerm(term: string): boolean {
+  const words = term.split(' ').filter(Boolean)
+  return words.length > 0 && words.every(w => /^\d+$/.test(w) || NUMBER_WORD_STEMS.some(stem => w.startsWith(stem)))
+}
+
+// Filler a phrase may start with before the flat: "квартира 24 ...", "на 12 ...".
+const LEADING_FILLER = new Set(['квартира', 'квартиру', 'кв', 'на', 'в', 'бронь', 'новая', 'это'])
+
+function phraseStart(text: string): string {
+  const words = text.split(' ').filter(Boolean)
+  let i = 0
+  while (i < words.length && i < 2 && LEADING_FILLER.has(words[i])) i++
+  return ` ${words.slice(i).join(' ')} `
+}
+
 /**
  * Deterministic fallback for when the model returns no property: finds names
  * and aliases spelled out in the phrase. Returns every property whose longest
- * matching term wins, so "инжу 12" beats a bare "инжу".
+ * matching term wins, so "инжу 12" beats a bare "инжу". Numeric names only
+ * count at the start of the phrase, so "с 12 по 15" is not read as flat 12.
  */
 export function matchPropertiesByAlias(transcript: string, properties: VoiceProperty[]): string[] {
-  const text = ` ${normalizeForMatch(transcript)} `
+  const normalized = normalizeForMatch(transcript)
+  const text = ` ${normalized} `
+  const start = phraseStart(normalized)
+  const found = (term: string) => (isNumericTerm(term) ? start.startsWith(` ${term} `) : text.includes(` ${term} `))
   let best = 0
   let matches: string[] = []
   for (const p of properties) {
     const terms = [p.name, ...(p.voice_aliases ?? [])].map(normalizeForMatch).filter(Boolean)
-    const longest = Math.max(0, ...terms.filter(t => text.includes(` ${t} `)).map(t => t.length))
+    const longest = Math.max(0, ...terms.filter(found).map(t => t.length))
     if (longest === 0) continue
     if (longest > best) {
       best = longest
@@ -216,8 +242,14 @@ export function normalizeModelOutput(
 
   let propertyId = raw.property_id && propertyIds.has(raw.property_id) ? raw.property_id : null
   let candidates = (raw.property_candidates ?? []).filter(id => propertyIds.has(id))
-  if (!propertyId && candidates.length === 0) {
-    const byAlias = matchPropertiesByAlias(ctx.transcript, ctx.properties)
+  const byAlias = matchPropertiesByAlias(ctx.transcript, ctx.properties)
+  if (propertyId && byAlias.length === 1 && byAlias[0] !== propertyId) {
+    // The phrase names a flat outright, yet the model chose another one
+    // (e.g. read "с 24" as flat 24): trust the phrase, offer the model's pick.
+    candidates = [propertyId, ...candidates]
+    propertyId = byAlias[0]
+    uncertain.add('property_id')
+  } else if (!propertyId && candidates.length === 0) {
     if (byAlias.length === 1) {
       propertyId = byAlias[0]
     } else {

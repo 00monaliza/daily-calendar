@@ -37,20 +37,22 @@ create policy "own_voice_drafts" on voice_booking_drafts
 
 -- Стартовые голосовые названия для существующих квартир. Срабатывает только
 -- там, где псевдонимы ещё не заданы, поэтому миграцию безопасно повторять.
-update properties set voice_aliases = array['алматау', 'алма тау', 'алма-тау']
+-- Квартиры называют короткими числами; диктовка iPhone пишет их то цифрами,
+-- то словами, поэтому заданы оба варианта.
+update properties set voice_aliases = array['89', 'восемьдесят девять']
 where voice_aliases = '{}' and name ilike '%алматау%';
 
-update properties set voice_aliases = array['инжу 12', 'инжу арена 12', 'арена 12', 'инжу двенадцать', 'двенадцатая']
+update properties set voice_aliases = array['12', 'двенадцать', 'двенадцатая']
 where voice_aliases = '{}' and name ~* 'инжу' and name ~ '(^|[^0-9])12([^0-9]|$)';
 
-update properties set voice_aliases = array['инжу 24', 'инжу арена 24', 'арена 24', 'инжу двадцать четыре', 'двадцать четвёртая']
+update properties set voice_aliases = array['24', 'двадцать четыре', 'двадцать четвёртая']
 where voice_aliases = '{}' and name ~* 'инжу' and name ~ '(^|[^0-9])24([^0-9]|$)';
 
-update properties set voice_aliases = array['весна', 'весна 3', 'весна три']
+update properties set voice_aliases = array['49', 'сорок девять']
 where voice_aliases = '{}' and name ilike '%весна%';
 
-update properties set voice_aliases = array['1509', 'пятнадцать ноль девять', 'тысяча пятьсот девять', 'пятнадцать девять']
+update properties set voice_aliases = array['1509', 'пятнадцать ноль девять', 'тысяча пятьсот девять']
 where voice_aliases = '{}' and name ~ '(^|[^0-9])1509([^0-9]|$)';
 
-update properties set voice_aliases = array['2006', 'двадцать ноль шесть', 'две тысячи шесть', 'двадцать шесть']
+update properties set voice_aliases = array['2006', 'двадцать ноль шесть', 'две тысячи шесть']
 where voice_aliases = '{}' and name ~ '(^|[^0-9])2006([^0-9]|$)';

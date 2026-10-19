@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildSummary,
+  isNumericTerm,
   matchPropertiesByAlias,
   normalizeModelOutput,
   pluralNights,
@@ -9,13 +10,14 @@ import {
 } from './voiceBooking'
 import { buildAvailabilityReport } from './bookingAvailability'
 
+// Same aliases as the seed in migration 007.
 const properties: VoiceProperty[] = [
-  { id: 'almatau', name: 'Алматау', base_price: 15000, voice_aliases: ['алматау', 'алма тау'] },
-  { id: 'inju12', name: 'Инжу Арена 12', base_price: 18000, voice_aliases: ['инжу 12', 'арена 12'] },
-  { id: 'inju24', name: 'Инжу Арена 24', base_price: 20000, voice_aliases: ['инжу 24', 'арена 24'] },
-  { id: 'vesna', name: 'Весна 3', base_price: 12000, voice_aliases: ['весна', 'весна три'] },
-  { id: 'k1509', name: '1509', base_price: 14000, voice_aliases: ['1509', 'пятнадцать ноль девять'] },
-  { id: 'k2006', name: '2006', base_price: 14000, voice_aliases: ['2006'] },
+  { id: 'almatau', name: 'Алматау', base_price: 15000, voice_aliases: ['89', 'восемьдесят девять'] },
+  { id: 'inju12', name: 'Инжу Арена 12', base_price: 18000, voice_aliases: ['12', 'двенадцать', 'двенадцатая'] },
+  { id: 'inju24', name: 'Инжу Арена 24', base_price: 20000, voice_aliases: ['24', 'двадцать четыре', 'двадцать четвёртая'] },
+  { id: 'vesna', name: 'Весна 3', base_price: 12000, voice_aliases: ['49', 'сорок девять'] },
+  { id: 'k1509', name: '1509', base_price: 14000, voice_aliases: ['1509', 'пятнадцать ноль девять', 'тысяча пятьсот девять'] },
+  { id: 'k2006', name: '2006', base_price: 14000, voice_aliases: ['2006', 'двадцать ноль шесть', 'две тысячи шесть'] },
 ]
 const sources = ['direct', 'kaspi', 'avito']
 const ctx = { transcript: '', properties, sources, today: '2026-10-19' }
@@ -42,18 +44,41 @@ function output(overrides: Partial<ModelBookingOutput>): ModelBookingOutput {
   }
 }
 
+describe('isNumericTerm', () => {
+  it.each(['12', '1509', 'двадцать четыре', 'двадцать четвертая', 'двенадцатая', 'сорок девять', 'тысяча пятьсот девять'])(
+    '%s is numeric',
+    term => expect(isNumericTerm(term)).toBe(true),
+  )
+  it.each(['алматау', 'инжу арена 12', 'весна 3'])('%s is not numeric', term => expect(isNumericTerm(term)).toBe(false))
+})
+
 describe('matchPropertiesByAlias', () => {
-  it('prefers the most specific alias', () => {
-    expect(matchPropertiesByAlias('Инжу 12 Айгерим с двенадцатого', properties)).toEqual(['inju12'])
+  it('reads a leading number as the flat', () => {
+    expect(matchPropertiesByAlias('24, Айгерим, с 12 по 15 ноября, 45 тысяч', properties)).toEqual(['inju24'])
+    expect(matchPropertiesByAlias('89 Олжас на три ночи', properties)).toEqual(['almatau'])
   })
 
-  it('handles ё, punctuation and case', () => {
-    expect(matchPropertiesByAlias('бронь на «Весна», три ночи', properties)).toEqual(['vesna'])
+  it('does not read dates or sums in the middle of the phrase as a flat', () => {
+    expect(matchPropertiesByAlias('Айгерим с 12 по 24 ноября', properties)).toEqual([])
+    expect(matchPropertiesByAlias('Олжас 49 тысяч', properties)).toEqual([])
   })
 
-  it('matches numeric flat names as whole words only', () => {
+  it('allows filler words before the number', () => {
     expect(matchPropertiesByAlias('квартира 1509 на две ночи', properties)).toEqual(['k1509'])
-    expect(matchPropertiesByAlias('сумма 15090 тенге', properties)).toEqual([])
+    expect(matchPropertiesByAlias('на двадцать четыре Айгерим', properties)).toEqual(['inju24'])
+  })
+
+  it('prefers the longest number', () => {
+    expect(matchPropertiesByAlias('двадцать четыре Айгерим', properties)).toEqual(['inju24'])
+    expect(matchPropertiesByAlias('две тысячи шесть, Олжас', properties)).toEqual(['k2006'])
+  })
+
+  it('still matches full names anywhere, ignoring case and punctuation', () => {
+    expect(matchPropertiesByAlias('бронь в «Алматау», три ночи', properties)).toEqual(['almatau'])
+  })
+
+  it('matches numbers as whole words only', () => {
+    expect(matchPropertiesByAlias('15090 тенге', properties)).toEqual([])
   })
 })
 
@@ -91,10 +116,20 @@ describe('normalizeModelOutput', () => {
     expect(parsed.total_price).toBe(36000)
   })
 
+  it('trusts a leading flat number over a model that read a date as the flat', () => {
+    const parsed = normalizeModelOutput(output({ property_id: 'inju24', guest_name: 'Айгерим' }), {
+      ...ctx,
+      transcript: '12 Айгерим с 24 по 26 ноября',
+    })
+    expect(parsed.property_id).toBe('inju12')
+    expect(parsed.property_candidates).toEqual(['inju24'])
+    expect(parsed.uncertain).toContain('property_id')
+  })
+
   it('drops ids and sources the model invented', () => {
     const parsed = normalizeModelOutput(output({ property_id: 'made-up', source: 'instagram' }), {
       ...ctx,
-      transcript: 'алма тау на выходные',
+      transcript: '89 на выходные',
     })
     expect(parsed.property_id).toBe('almatau')
     expect(parsed.source).toBeNull()

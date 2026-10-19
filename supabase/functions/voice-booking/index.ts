@@ -83,13 +83,17 @@ async function extractBooking(params: {
   sources: string[]
 }): Promise<ModelBookingOutput> {
   const client = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') })
+  // Haiku by default: the user is waiting on the Shortcut and extraction is easy.
+  const model = Deno.env.get('VOICE_BOOKING_MODEL') || 'claude-haiku-5-5'
+  // Haiku has no server-side refusal fallback; larger models re-run a
+  // classifier-declined request on Anthropic's recommended model.
+  const fallback = model.startsWith('claude-haiku')
+    ? {}
+    : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
   const response = await client.beta.messages.create({
-    model: Deno.env.get('VOICE_BOOKING_MODEL') ?? 'claude-opus-5-5',
+    model,
     max_tokens: 4000,
-    betas: ['server-side-fallback-2026-07-01'],
-    // Re-runs a classifier-declined request on Anthropic's recommended model.
-    fallbacks: 'default',
-    // Latency-sensitive: the user is waiting on the Shortcut; extraction is easy.
+    ...fallback,
     output_config: {
       effort: 'low',
       format: { type: 'json_schema', schema: BOOKING_OUTPUT_SCHEMA },
