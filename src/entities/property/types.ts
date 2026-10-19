@@ -9,6 +9,8 @@ export interface Property {
   color: string
   is_active: boolean
   sort_order: number | null
+  /** Short spoken names used by voice booking ("инжу 12", "весна"). Added in migration 007. */
+  voice_aliases?: string[]
   created_at: string
 }
 
