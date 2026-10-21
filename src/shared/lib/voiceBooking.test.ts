@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildBookingInsert,
   buildSummary,
+  canAutoSave,
   isNumericTerm,
   matchPropertiesByAlias,
   normalizeModelOutput,
@@ -191,4 +193,69 @@ describe('pluralNights', () => {
     '%i → %s',
     (n, expected) => expect(pluralNights(n)).toBe(expected),
   )
+})
+
+describe('autosave', () => {
+  const free = buildAvailabilityReport({
+    bookings: [], properties, propertyId: 'inju24', checkIn: '2026-11-12', checkOut: '2026-11-15', today: '2026-10-19',
+  })
+  const clean = () => normalizeModelOutput(
+    output({
+      property_id: 'inju24', guest_name: 'Айгерим', check_in: '2026-11-12', check_out: '2026-11-15',
+      total_price: 45000, prepayment: 10000,
+    }),
+    { ...ctx, transcript: '24 Айгерим с 12 по 15 ноября 45 тысяч предоплата 10' },
+  )
+
+  it('saves a confident booking on free dates', () => {
+    expect(canAutoSave(clean(), free)).toBe(true)
+  })
+
+  it('keeps a draft when the dates are busy or unknown', () => {
+    const busy = buildAvailabilityReport({
+      bookings: [{ id: 'b1', property_id: 'inju24', check_in: '2026-11-13', check_out: '2026-11-14', guest_name: 'Олжас' }],
+      properties, propertyId: 'inju24', checkIn: '2026-11-12', checkOut: '2026-11-15', today: '2026-10-19',
+    })
+    expect(canAutoSave(clean(), busy)).toBe(false)
+    expect(canAutoSave(clean(), { ...free, status: 'unknown' })).toBe(false)
+  })
+
+  it('keeps a draft when a key field is missing or a guess', () => {
+    expect(canAutoSave({ ...clean(), total_price: null }, free)).toBe(false)
+    expect(canAutoSave({ ...clean(), uncertain: ['guest_name'] }, free)).toBe(false)
+    expect(canAutoSave({ ...clean(), property_candidates: ['inju12'] }, free)).toBe(false)
+  })
+
+  it('ignores doubts about optional fields', () => {
+    expect(canAutoSave({ ...clean(), uncertain: ['guest_phone', 'source'] }, free)).toBe(true)
+  })
+
+  it('builds the booking row with the form defaults', () => {
+    expect(buildBookingInsert(clean(), 'owner-1', sources)).toEqual({
+      owner_id: 'owner-1',
+      property_id: 'inju24',
+      guest_name: 'Айгерим',
+      guest_phone: null,
+      check_in: '2026-11-12',
+      check_out: '2026-11-15',
+      check_in_time: '14:00',
+      check_out_time: '12:00',
+      total_price: 45000,
+      prepayment: 10000,
+      payment_status: 'partial',
+      source: 'direct',
+      comment: null,
+      color: '#5e81ea',
+    })
+  })
+
+  it('falls back to a phone from guest history', () => {
+    expect(buildBookingInsert({ ...clean(), known_guest_phone: '+77771234567' }, 'o', sources).guest_phone).toBe('+77771234567')
+  })
+
+  it('says the booking was saved', () => {
+    const summary = buildSummary(clean(), free, properties, undefined, true)
+    expect(summary.split('\n')[0]).toBe('✅ Бронь сохранена')
+    expect(summary).not.toContain('Черновик')
+  })
 })

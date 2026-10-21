@@ -337,15 +337,58 @@ function formatTenge(value: number): string {
   return `${value.toLocaleString('ru-RU').replace(/[\u00a0\u202f]/g, ' ')} ₸`
 }
 
+const AUTOSAVE_REQUIRED: VoiceField[] = ['property_id', 'guest_name', 'check_in', 'check_out', 'total_price']
+
+/**
+ * A dictated booking is saved without the confirmation form only when the
+ * fields that matter are all present, none of them was flagged as a guess,
+ * and the dates are known to be free. Everything else stays a draft.
+ */
+export function canAutoSave(parsed: VoiceBookingParsed, availability: AvailabilityReport): boolean {
+  if (availability.status !== 'free') return false
+  if (!parsed.property_id || !parsed.guest_name || !parsed.check_in || !parsed.check_out) return false
+  if (parsed.total_price === null || parsed.total_price <= 0) return false
+  if (parsed.property_candidates.length > 0) return false
+  return !AUTOSAVE_REQUIRED.some(field => parsed.uncertain.includes(field))
+}
+
+// Same defaults the booking form uses for a new booking.
+const DEFAULT_CHECK_IN_TIME = '14:00'
+const DEFAULT_CHECK_OUT_TIME = '12:00'
+const DEFAULT_BOOKING_COLOR = '#5e81ea'
+
+/** Row for `bookings`; call only after canAutoSave() returned true. */
+export function buildBookingInsert(parsed: VoiceBookingParsed, ownerId: string, sources: string[]) {
+  const prepayment = parsed.prepayment ?? 0
+  return {
+    owner_id: ownerId,
+    property_id: parsed.property_id!,
+    guest_name: parsed.guest_name!,
+    guest_phone: parsed.guest_phone ?? parsed.known_guest_phone,
+    check_in: parsed.check_in!,
+    check_out: parsed.check_out!,
+    check_in_time: parsed.check_in_time ?? DEFAULT_CHECK_IN_TIME,
+    check_out_time: parsed.check_out_time ?? DEFAULT_CHECK_OUT_TIME,
+    total_price: parsed.total_price!,
+    prepayment,
+    payment_status: parsed.payment_status ?? (prepayment > 0 ? 'partial' : 'waiting'),
+    source: parsed.source ?? sources[0] ?? 'direct',
+    comment: parsed.comment,
+    color: DEFAULT_BOOKING_COLOR,
+  }
+}
+
 /** Short Russian summary the iOS Shortcut shows (and can read aloud). */
 export function buildSummary(
   parsed: VoiceBookingParsed,
   availability: AvailabilityReport,
   properties: VoiceProperty[],
   transcript?: string,
+  saved = false,
 ): string {
   const nameOf = (id: string) => properties.find(p => p.id === id)?.name ?? '?'
   const lines: string[] = []
+  if (saved) lines.push('✅ Бронь сохранена')
   // What the phone actually sent: makes a bad dictation obvious at a glance.
   if (transcript) lines.push(`🎙 «${transcript.length > 120 ? `${transcript.slice(0, 120)}…` : transcript}»`)
 
@@ -373,8 +416,10 @@ export function buildSummary(
     lines.push('💰 Сумма не распознана')
   }
 
-  if (availability.status === 'free') {
-    lines.push('✅ Свободно')
+  if (saved) {
+    // Availability was checked before saving; nothing more to say.
+  } else if (availability.status === 'free') {
+    lines.push('✅ Свободно · проверьте и сохраните в приложении')
   } else if (availability.status === 'busy') {
     const who = availability.conflicts
       .map(c => `${c.guest_name ?? 'бронь'} ${formatRange(c.check_in, c.check_out)}`)
@@ -394,6 +439,8 @@ export function buildSummary(
   } else if (availability.free_properties.length > 0) {
     lines.push(`Свободны на эти даты: ${availability.free_properties.map(p => p.name).join(', ')}`)
   }
+
+  if (!saved && availability.status !== 'free') lines.push('📝 Черновик ждёт подтверждения в приложении')
 
   return lines.join('\n')
 }

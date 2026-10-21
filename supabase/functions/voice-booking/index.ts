@@ -1,6 +1,8 @@
 // Voice booking: takes a dictated phrase from the iOS Shortcut, extracts the
-// booking fields with Claude, checks availability and stores a pending draft
-// the user confirms in the app. It never creates a booking.
+// booking fields with Claude and checks availability. When the flat, dates,
+// name and sum are all confidently recognized and the dates are free, the
+// booking is saved right away (VOICE_BOOKING_AUTOSAVE=false turns this off);
+// otherwise a pending draft waits for confirmation in the app.
 //
 // Auth: header `x-voice-token: <personal token>` only (see Settings page).
 // Signed-in app users can't call it, so nobody but the token's owner spends
@@ -13,8 +15,10 @@ import Anthropic from 'npm:@anthropic-ai/sdk@0.135.0'
 import { addDaysIso, buildAvailabilityReport, isIsoDate } from '../_shared/bookingAvailability.ts'
 import {
   BOOKING_OUTPUT_SCHEMA,
+  buildBookingInsert,
   buildSummary,
   buildSystemPrompt,
+  canAutoSave,
   buildUserPrompt,
   normalizeModelOutput,
   type ModelBookingOutput,
@@ -201,22 +205,37 @@ Deno.serve(async req => {
       today,
     })
 
+    let bookingId: string | null = null
+    if (Deno.env.get('VOICE_BOOKING_AUTOSAVE') !== 'false' && canAutoSave(parsed, availability)) {
+      const { data: booking, error: bookingError } = await adminClient
+        .from('bookings')
+        .insert(buildBookingInsert(parsed, ownerId, sources))
+        .select('id')
+        .single()
+      // A failed insert is not fatal: the phrase still becomes a draft.
+      if (bookingError) console.error('voice-booking autosave failed', bookingError)
+      else bookingId = booking.id
+    }
+
+    // The draft is kept even for a saved booking (as 'used'): it is the
+    // record behind the daily limit and shows what was dictated.
     const { data: draft, error: draftError } = await adminClient
       .from('voice_booking_drafts')
-      .insert({ owner_id: ownerId, transcript, parsed, availability })
+      .insert({ owner_id: ownerId, transcript, parsed, availability, status: bookingId ? 'used' : 'pending' })
       .select('id')
       .single()
     if (draftError) throw draftError
 
     const appUrl = (Deno.env.get('APP_URL') ?? '').replace(/\/$/, '')
-    const summary = buildSummary(parsed, availability, properties, transcript)
+    const summary = buildSummary(parsed, availability, properties, transcript, !!bookingId)
 
     // Only the summary and link: the full draft (with a phone looked up from
     // guest history) stays behind RLS for the signed-in app, so a leaked voice
     // token can't be used to look up guests' phones.
     return jsonResponse({
+      saved: !!bookingId,
       draft_id: draft.id,
-      open_url: appUrl ? `${appUrl}/?voice_draft=${draft.id}` : null,
+      open_url: appUrl ? (bookingId ? `${appUrl}/` : `${appUrl}/?voice_draft=${draft.id}`) : null,
       summary,
     })
   } catch (err) {
